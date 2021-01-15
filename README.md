@@ -11,7 +11,8 @@ Eventually, the project code will be maintained within this repository. For now,
         * Define how many spline paths to make based on each coordinate list.
         * Add waiting areas (max 1 per spline segment) where people might or might not have to wait with certain probability, for a duration drawn from specified distribution. This aims to simulate a traffic light controlled crossing.
         * Each path is generated with a certain base speed, drawn from a specified distribution.
-        * Data exported to Google Drive folder (logon needed) in Google Sheet format
+        * Add Gaussian measurement noise to the data.
+        * Data exported to Google Drive folder (logon needed) in Google Sheet format.
         
 * Basic structure for generating TF data sets and first tests with (probabilistic) neural networks ([link](https://colab.research.google.com/drive/1DCvEI3dFbwpTTodAf09PFo3vKNNgwkqc?usp=sharing)) 
     * Class proposal for data
