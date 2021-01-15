@@ -30,4 +30,6 @@ Eventually, the project code will be maintained within this repository. For now,
             * Altered Loss Function
         
 ## Known Problems
-* Google Colab "data_loading.ipynb": no train-validation-test split done in data class for now, therefore unreliable results since tested and validated with training data.
+* Google Colab "data_loading.ipynb": 
+    * No train-validation-test split done in data class for now, therefore unreliable results since tested and validated with training data
+    * No normalisation of data
