@@ -1,0 +1,1 @@
+-e git://github.com/crowdbotp/OpenTraj.git@d249ba6951dd0f54b532fbe2ca6edc46b0d7093f#egg=open_traj
