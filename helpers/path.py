@@ -55,7 +55,7 @@ def _test():
     threshold = .5
     g = Graph(wayp_dict, dest_dict, threshold)
 
-    path = np.array([[0., 0.], [1., 1.], [2.1,2.], [2.1,2.]])
+    path = np.array([[0., 0.], [1., 1.], [2.1,2.], [2.1,2.], [1., 1.], [0., 0.]])
 
     p = Path(path, g)  
     p.make_waypoint_arr(True)
@@ -63,6 +63,8 @@ def _test():
     p.add_measurement([3., 3.], True)
     print(p.wayp_arr)
     print(g.trans_mat)
+    g.normalize_trans_mat()
+    print(g.trans_mat_normed)
     # assert np.all(p.wayp_path == np.array([1, 2, 3]))
 
 
