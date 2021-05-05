@@ -2,3 +2,4 @@ data/
 .pytest_cache/
 .vscode/
 OpenTraj/
+*.pyc
