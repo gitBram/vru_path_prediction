@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<data>
+    <dataset name="ind">
+        <key name="abc">
+            <dest>
+                <x>1.</x>
+                <y>2.</y>
+            </dest>
+            <dest>
+                <x>1.</x>
+                <y>2.</y>
+            </dest>
+        </key>
+        <key name="def">
+            <dest>
+                <x>1.</x>
+                <y>2.</y>
+            </dest>
+            <dest>
+                <x>1.</x>
+                <y>2.</y>
+            </dest>
+        </key>
+    <dataset/>
+</data>

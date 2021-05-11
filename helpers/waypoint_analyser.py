@@ -25,8 +25,8 @@ class WaypointAnalyser:
         self.index_col = index_col
         self.n_clusters = n_clusters
 
-        interest_areas = self.interest_area_searcher(save_img = True)
-        interest_points = self.interest_point_searcher(interest_areas, save_img = True)
+        # interest_areas = self.interest_area_searcher(save_img = True)
+        # interest_points = self.interest_point_searcher(interest_areas, save_img = True)
 
     def interest_area_searcher(self, save_img = False):
         ''' find for each grid cell a measure for being a point of interest '''
@@ -53,7 +53,7 @@ class WaypointAnalyser:
                 # calculate value for each grid cell
                 value = self._value_function(clusterlist)
                 # put value in correct place in matrix
-                value_matrix[(n_y_cells-1) - c_y_ind, c_x_ind] = value #value_matrix[(n_y_cells-1) - c_y_ind, c_x_ind] = value
+                value_matrix[c_y_ind, c_x_ind] = value #value_matrix[(n_y_cells-1) - c_y_ind, c_x_ind] = value
 
         #TODO: get dirty fix below out
         value_matrix = np.nan_to_num(value_matrix)

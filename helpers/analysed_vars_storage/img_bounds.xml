@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<data>
+    <dataset name="ind">
+        <key name="11">
+            <imgbound>
+                <x_min>6.</x_min>
+                <y_min>-75.</y_min>
+                <x_max>110.</x_max>
+                <y_max>-2.</y_max>
+            </imgbound>
+        </key>
+    </dataset>
+</data>

@@ -8,11 +8,12 @@ import networkx as nx
 
 class Graph():
     ''' Graph class to fill transition matrix and calculate probahilities '''
-    def __init__(self, wayp_dict, dest_dict, threshold):
+    def __init__(self, wayp_dict, dest_dict, dist_threshold, std_graph_prune_threshold):
         # copy vals
         self.wayp_dict = wayp_dict
         self.dest_dict = dest_dict
-        self.threshold = threshold
+        self.dist_threshold = dist_threshold
+        self.std_graph_prune_threshold = std_graph_prune_threshold
 
         # do necessary checks 
         all_point_names = self.waypoint_names + self.destination_names
@@ -28,6 +29,9 @@ class Graph():
         self._num_stored_trans_mats = floor(sqrt(len(self.points_names)) * 2) # estimate of how long paths usually are: 2*sqrt(n_points)
         self.trans_mats_dict = self.__init_trans_mat_list(n_points)
 
+        # placeholder for the standard graph
+        self.std_graph = None
+
     def __init_trans_mat(self, n_points):
         ''' initialize the transition matrix with zeros '''
         return np.zeros((n_points, n_points))
@@ -39,7 +43,7 @@ class Graph():
 
 
     @classmethod
-    def from_matrices(cls, mat_wayp, mat_dest, threshold):
+    def from_matrices(cls, mat_wayp, mat_dest, dist_threshold, std_graph_prune_threshold):
         ''' Init from matrices '''
         wayp_dict = {}
         dest_dict = {}
@@ -51,7 +55,7 @@ class Graph():
         for i in range(num_destinations):
             key = 'd{my_i:x}'.format(my_i=i)
             dest_dict[key] = (num_destinations[i,0], num_destinations[i,1])
-        return cls(wayp_dict, dest_dict, threshold)  
+        return cls(wayp_dict, dest_dict, dist_threshold, std_graph_prune_threshold)  
 
     def analyse_full_signal(self, path, add_to_trans_mat):
         ''' return a list of waypoints/destinations for a list of location measurements. For each 
@@ -72,7 +76,7 @@ class Graph():
 
         # filter based on threshold
         minima = dist_sigs[min_dist_ids, list(range(len(min_dist_ids)))]
-        close_enough = minima < self.threshold
+        close_enough = minima < self.dist_threshold
 
         if len(close_enough) < 1:
             return np.array([]) 
@@ -91,14 +95,14 @@ class Graph():
 
         return wayp_path
 
-    def normalize_trans_mat(self):
+    def __normalize_trans_mat(self):
         ''' normalize the transition matrix '''
         trans_mat_normed = np.zeros_like(self.trans_mat)
         for i in range(len(self.trans_mat)):
             row = self.trans_mat[i]
             row_sum = np.sum(row) 
             if row_sum == 0.:
-                warnings.warn("dead points detected", Warning)
+                warnings.warn("dead points detected: noone leaving from this point", Warning)
                 trans_mat_normed[i] = row
             else:
                 trans_mat_normed[i] = row/row_sum
@@ -123,34 +127,73 @@ class Graph():
         for dest in self.destination_names:
             full_prob[dest] = path_prob * partial_dest_prob[dest] / full_dest_prob[dest]
         
+        print('Path prob:')
+        print(path_prob)
+        print('Path end to Dest prob:')
+        print(partial_dest_prob)
+        print('Path start to Dest prob:')
+        print(full_dest_prob)
+        print('Full calculated probs:')
+        print(full_prob)
         return full_prob
 
-    def calculate_prob(self, start_node, end_node, detour_factor = 0.2):
+    def calculate_prob(self, start_node, end_node, detour_factor = 0.2, dist_calc_method = 'graph'):
         ''' using the graph, calculate probability of traveling from start to end node '''
         # make sure that given points are existing
         assert start_node in self.points_names
         assert end_node in self.points_names
-        # get average distance of the most significant paths within the graph
-        sign_distances, avg_dist = self.__get_avg_distances()
 
-        # get l1 distance between start and end point
-        start_coor = points_dict[start_node]
-        end_coor = points_dict[end_node]
-        l1_travel_dist = np.linalg.norm((start_coor-end_coor), ord=1)
-
-        # get some factors that increase allowed number of steps
-        dist_std = np.std(sign_distances) # to incorporat effect of difference in length between nodes
-
-        total_added_factor = (detour_factor + dist_std/avg_dist) * l1_travel_dist 
-
+        min_steps, max_steps = self.__min_max_step_num(start_node, end_node, method=dist_calc_method)
         #TODO: check whether some lower limit should be set or whether it is unnecesary 
 
-        return None
+        return self.__calculate_prob_n_steps(start_node, end_node, min_steps, max_steps)
+
+    def __min_max_step_num(self, start_node, end_node, detour_factor = .2, method = 'graph'):
+        ''' calculate the minimum and maximum steps between 2 points '''
+        ''' method can be either graph based or distance based '''
+
+
+        # get indices
+        start_node_id = self.points_indices_dict[start_node]
+        end_node_id = self.points_indices_dict[end_node]
+
+        if method == 'distance':
+            # get average distance of the most significant paths within the graph
+            sign_distances, avg_dist = self.__get_avg_distances()
+
+            # get l1/l2 distance between start and end point
+            start_coor = np.array(self.points_locations[start_node_id])
+            end_coor = np.array(self.points_locations[end_node_id])
+            l1_travel_dist = np.linalg.norm((start_coor-end_coor), ord=1)
+            l2_travel_dist = np.linalg.norm((start_coor-end_coor))
+
+            # get some factors that increase allowed number of steps
+            dist_std = np.std(sign_distances) # to incorporat effect of difference in length between nodes
+
+            total_added_factor = (detour_factor + dist_std/avg_dist) * l1_travel_dist 
+
+            # finally decide minimum and maximum number of steps for certain trajectory
+            min_steps = floor(max(1, l2_travel_dist/avg_dist))
+            max_steps = ceil(l1_travel_dist + total_added_factor)
+        else: # method is graph based
+            try:
+                graph = self.std_graph
+                shortest_path = nx.shortest_path(graph, start_node_id, end_node_id) 
+                min_steps = len(shortest_path) - 1 
+                max_steps = ceil((1+detour_factor)*min_steps)
+            except:
+                min_steps = 0
+                max_steps = 0
+        return min_steps, max_steps
 
     def __calculate_prob_n_steps(self, start_node, end_node, min_steps, max_steps, recalculate_mats = True):
+        # in case there was no shortest route found, no chance of getting there so zero probability returned
+        if min_steps == 0. and max_steps == 0.:
+            return 0.
+        
         # recalculation can be done first, in case some observations have been added to trans_mat
         if recalculate_mats:
-            self.__recalculate_trans_mat_dependencies()
+            self.recalculate_trans_mat_dependencies()
 
         # make sure steps are integers
         min_steps_r = floor(min_steps)
@@ -164,7 +207,7 @@ class Graph():
         n_stored_ms = self._num_stored_trans_mats
 
         # get the probability
-        current_prob = 1.
+        current_prob = 0.
         for step in range(min_steps_r, max_steps_r + 1):
             if not step in self.stored_mats_keys:
                 # we do not have precalculated matrix --> calculate from last matrix in trans_mats
@@ -174,51 +217,98 @@ class Graph():
             # calculate the prob
             prob = self.trans_mats_dict[step][start_id, end_id]
             # multiply with the prob
-            current_prob *= prob
+            current_prob += prob
+        return current_prob
 
-    def visualize_graph(self, save_loc, threshold = 0.):
-        num_nodes = self.num_nodes
-        trans_mat_normed = self.trans_mat_normed
-        node_locations = self.points_locations
-
+    def create_graph(self, threshold = 0.):
+        ''' create a NetworkX based graph of the current status, allowing use of in-built analysis functions '''
+        # normalized transition matrix is needed here to prune the graph based on threshold
+        trans_mat = self.trans_mat_normed
+        
         # initialize graph
         G = nx.DiGraph()
-
+        inv_wayp = {y:x for x,y in self.destinations_indices_dict.items()}
+        inv_dest = {y:x for x,y in self.waypoints_indices_dict.items()}
+        G.add_nodes_from(inv_wayp)
+        G.add_nodes_from(inv_dest)
         # create the nodes with weight from 
-        weights = []
-
-        for start_node in range(num_nodes):
-            for end_node in range(num_nodes):
+        for start_node in self.points_names:
+            for end_node in self.points_names:
                 if start_node == end_node:
                     continue
-                weight = trans_mat_normed[start_node, end_node]
+                start_node_id = self.points_indices_dict[start_node]
+                end_node_id = self.points_indices_dict[end_node]
+                weight = trans_mat[start_node_id, end_node_id]
 
                 if weight > threshold:
-                    G.add_edge(start_node, end_node)
-                    weights.append(weight)
+                    G.add_edge(start_node_id, end_node_id)
+                    print('start: %s (%d) end: %s (%d) value: %d' % (start_node, start_node_id, end_node, end_node_id, weight))
+   
+
+        return G
+
+    def visualize_graph(self, graph, save_loc, g_type = 'relative'):
+        ''' visualize graph (nodes and edges with its weights, absolute or relative ) '''
+        #check inputs
+        assert save_loc is not None
+        assert g_type == 'absolute' or g_type  == 'relative'
+
+        # get relative or absolute weight numbers
+        trans_mat = self.trans_mat_normed if g_type == 'relative' else self.trans_mat
+
+        # get number of nodes
+        num_nodes = self.num_nodes
+
+        # get node locations for drawing on x,y coordinate
+        node_locations = self.points_locations
+      
+        # we have to collect weights in a separate loop as networkx does not add edges in order
+        weights = []
+        for edge in graph.edges():
+            weight = trans_mat[edge[0], edge[1]]
+            weights.append(weight)
+        print(graph.edges)
+        # set node color depending on destination or waypoint
+        d_c = 'red'
+        w_c = 'green'
+        node_colors = []
+        for n in graph.nodes():
+            if n in self.waypoints_indices_dict.values():
+                node_colors.append(w_c)
+            else:
+                node_colors.append(d_c)
 
         options = {
-            "node_color": "green",
+            "node_color": node_colors,
             "edge_color": weights,
             "width": 4,
             "edge_cmap": plt.cm.Blues,
             "with_labels": True,
             "connectionstyle":'arc3, rad = 0.1'
         }
-        graph_fig = nx.draw(G, node_locations, **options)
-
+        graph_fig = nx.draw(graph, node_locations, **options)
+        inv_points_ids = {y:x for x,y in self.points_indices_dict.items()}
+        higher_pos = [[l[0], l[1]+.1] for l in node_locations]
+        nx.draw_networkx_labels(graph,higher_pos,inv_points_ids,font_size=12,font_color='black')
         plt.savefig(save_loc)
 
-    def __np_dot_square(matrix, power):
+    def __np_dot_square(self, matrix, power):
         ''' dot product of matrix with itself power amount of times '''
-        mats = [matrix for i in range(power)]
+        if power == 1:
+            return matrix
+        else:
+            mats = [matrix for i in range(power)]
+            return np.linalg.multi_dot(mats)
 
-        return np.linalg.multi_dot(mats)
-
-    def __recalculate_trans_mat_dependencies():
+    def recalculate_trans_mat_dependencies(self):
         ''' recalculate the matrices which depend on the main transition matrix '''
-        self.normalize_trans_mat()
+        self.__normalize_trans_mat()
         self.__recalculate_trans_mats_list()
+        self.__recalculate_std_graph()
+
+    def __recalculate_std_graph(self):
+        self.std_graph = self.create_graph(self.std_graph_prune_threshold)
+
 
     def __recalculate_trans_mats_list(self):
         ''' recalculate the matrices in the transition matrices dictionary '''
@@ -230,15 +320,16 @@ class Graph():
             last_trans_mat = np.dot(last_trans_mat, self.trans_mat_normed)
             trans_mats[i] = last_trans_mat
 
-        self.trans_mats_dict = trans_mats_dict
+        self.trans_mats_dict = trans_mats
 
     def __get_avg_distances(self):
         ''' calculate the average of distances between all significantly linked nodes '''
         significant_prob = 1/len(self.points_names)
-        distance_mat = self.__calculate_node_distances()
+        locs = np.array(self.points_locations)
+        distance_mat = self.__calculate_node_distances(locs, locs)
 
         # get distances of paths between nodes that are used significantly much
-        significant_dists = np.extract(distance_mat > significant_prob, distance_mat)
+        significant_dists = np.extract(self.trans_mat_normed > significant_prob, distance_mat)
 
         return significant_dists, np.average(significant_dists)
 
@@ -292,6 +383,7 @@ class Graph():
         return dist_sig_dict
 
     def __calculate_node_distances(self, node_list_1, node_list_2):
+        ''' calculate distances '''
         return np.sqrt((node_list_1**2).sum(axis=1)[:, None] - 2 * node_list_1.dot(node_list_2.transpose()) + ((node_list_2**2).sum(axis=1)[None, :]))
 
     @property  
@@ -332,11 +424,30 @@ class Graph():
     @property 
     def points_indices_dict(self):
         return dict(zip(self.points_names, range(len(self.points_names))))
+    
+    @property 
+    def waypoints_indices_dict(self):
+        ''' waypoints get the 0-n_waypoints indices ''' 
+        return dict(zip(self.waypoint_names, list(range(self.num_waypoints))))
+
+    @property 
+    def destinations_indices_dict(self):
+        ''' destinations get (n_waypoints+1) - (n_waypoints+n_destinations) indices'''
+        return dict(zip(self.destination_names, 
+        [x + self.num_waypoints for x in list(range(self.num_destinations))]))
 
     @property
     def num_nodes(self):
         return len(self.points_names)
     
+    @property 
+    def num_destinations(self):
+        return len(self.destination_names)
+    
+    @property 
+    def num_waypoints(self):
+        return len(self.waypoint_names)
+
     @property 
     def stored_mats_keys(self):
         return list(self.trans_mats_dict.keys())
@@ -344,13 +455,31 @@ class Graph():
 # Test function for module  
 def _test():
     ''' test graph class ''' 
-    wayp_dict = {'w1': [1.,1.], 'w2': [2., 2.]}
-    dest_dict = {'d1': [0.,0.], 'd2': [2., 3.]}
+    wayp_dict = {'w1': [1.,1.], 'w2': [2., 1.], 'w3': [3., 2.], 'w4': [3., 0.]}
+    dest_dict = {'d1': [0.,1.], 'd2': [4., 2.], 'd3': [4., 0.]}
     threshold = .5
-    g = Graph(wayp_dict, dest_dict, threshold)
-    path = np.array([[0., 0.], [1., 1.], [2.1,2.], [2.1,2.]])
-    a = g.analyse_full_signal(path, add_to_trans_mat = True)
-    g.visualize_graph('./data/images/graph.png')
+    prune_threshold = .05
+    g = Graph(wayp_dict, dest_dict, threshold, prune_threshold)
+    path1 = np.array([[0., 1.], [1., 1.], [2.,1.], [3.,2.], [4.,2.]])
+    path2 = np.array([[0., 1.], [1., 1.], [2.,1.], [3.,0.], [4.,0.]])
+    path3 = np.array([[0., 1.], [1., 1.], [2.,1.], [3.,0.], [4.,0.]])
+    path4 = np.array([[4.,0.], [3.,0.], [2.,1.], [1., 1.], [0., 1.]])
+    a = g.analyse_full_signal(path1, add_to_trans_mat = True)
+    a = g.analyse_full_signal(path2, add_to_trans_mat = True)
+    a = g.analyse_full_signal(path3, add_to_trans_mat = True)
+    a = g.analyse_full_signal(path4, add_to_trans_mat = True)
+    g.recalculate_trans_mat_dependencies()
+    print(g.waypoints_indices_dict)
+    print(g.destinations_indices_dict)
+    print(g.trans_mat)
+    print(g.trans_mat_normed)
+    my_graph = g.create_graph(.05)
+    g.visualize_graph(my_graph, './data/images/graph.png', g_type='relative')
+    # print(g.calculate_prob('w1', 'd1'))
+    print(g.calculate_destination_probs(['d3', 'w4', 'w2', 'w3']))
+
+    # print(g.trans_mats_dict[3])
+    # print(np.dot(np.dot(g.trans_mat_normed, g.trans_mat_normed), g.trans_mat_normed))
     return None
 
 if __name__ == '__main__':
