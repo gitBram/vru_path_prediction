@@ -30,8 +30,7 @@ class WaypointAnalyser:
 
     def interest_area_searcher(self, save_img = False):
         ''' find for each grid cell a measure for being a point of interest '''
-        g_x_min, g_x_max, g_y_min, g_y_max = self.grid_limits
-        n_x_cells, n_y_cells = math.ceil((g_x_max-g_x_min)/self.grid_res), math.ceil((g_y_max-g_y_min)/self.grid_res)
+        n_x_cells, n_y_cells = self.n_x_cells, self.n_y_cells
 
         value_matrix = np.zeros(shape=(n_y_cells, n_x_cells))
         for c_x_ind in range(n_x_cells):
@@ -90,7 +89,22 @@ class WaypointAnalyser:
         if save_img:    
             self._save_2d_matrix_scatter_img(lapl_blurred, coordinates_wayp_bl, 'data/images/laplacian.jpg', invert_y=True)
 
-        return coordinates_wayp_bl
+        return self.__restore_orig_grid_lims(coordinates_wayp_bl)
+
+    def __restore_orig_grid_lims(self, xy_mat):
+        g_x_min, g_x_max, g_y_min, g_y_max = self.grid_limits
+
+        def rescale(val, curr_min, next_min, orig_res):
+            new_val = ((val - curr_min) * orig_res) + next_min
+            return new_val
+
+        mat = xy_mat.copy()
+
+        for i in range(len(mat)):
+            mat[i, 0] = rescale(mat[i, 0], 0, g_x_min, self.grid_res)
+            mat[i, 1] = rescale(mat[i, 1], 0, g_y_min, self.grid_res)
+
+        return mat
 
     def _switch_columns(self, mat):
         ''' switch the 2 columns of a 2d matrix '''
@@ -201,9 +215,39 @@ class WaypointAnalyser:
         ax.set_aspect('equal', adjustable='box')
         fig.savefig(location)
 
+    @property
+    def n_x_cells(self):
+        ''' calculate from grid limits and resolution number of x grid cells '''
+        g_x_min, g_x_max, _, _ = self.grid_limits
+        return math.ceil((g_x_max-g_x_min)/self.grid_res)
+    @property
+    def n_y_cells(self):
+        ''' calculate from grid limits and resolution number of y grid cells '''
+        _, _, g_y_min, g_y_max = self.grid_limits
+        return math.ceil((g_y_max-g_y_min)/self.grid_res)
+
+def restore_orig_grid_lims(xy_mat):
+    g_x_min, g_x_max, g_y_min, g_y_max = (1.,2.,3.,4.)
+    grid_res = .5
+
+    def rescale(val, curr_min, next_min, orig_res):
+        new_val = ((val - curr_min) * orig_res) + next_min
+        return new_val
+
+    mat = xy_mat.copy()
+
+    for i in range(len(mat)):
+        mat[i, 0] = rescale(mat[i, 0], 0, g_x_min, grid_res)
+        mat[i, 1] = rescale(mat[i, 1], 0, g_y_min, grid_res)
+
+    return mat
+
 
 # Test function for module  
 def _test():
+    m = np.matrix([[1., 1.],
+    [2., 2.]])
+    print(restore_orig_grid_lims(m))
     return None
 
 if __name__ == '__main__':
