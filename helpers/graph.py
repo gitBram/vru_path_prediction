@@ -54,7 +54,7 @@ class Graph():
             wayp_dict[key] = (mat_wayp[i,0], mat_wayp[i,1])
         for i in range(num_destinations):
             key = 'd{my_i:x}'.format(my_i=i)
-            dest_dict[key] = (num_destinations[i,0], num_destinations[i,1])
+            dest_dict[key] = (mat_dest[i,0], mat_dest[i,1])
         return cls(wayp_dict, dest_dict, dist_threshold, std_graph_prune_threshold)  
 
     def analyse_full_signal(self, path, add_to_trans_mat):
@@ -88,12 +88,19 @@ class Graph():
         accessed_points_f_scew[0] = -1 # in case last point is equal to first
         repetitions = np.not_equal(accessed_points_f, accessed_points_f_scew, dtype = object)
         
-        wayp_path = accessed_points_f[repetitions]
+        wayp_names = accessed_points_f[repetitions]
+        wayp_locs = self.__point_names_to_locs(wayp_names)
 
         if add_to_trans_mat:
-            self.__add_path_to_trans_mat(wayp_path)
+            self.__add_path_to_trans_mat(wayp_names)
 
-        return wayp_path
+        return wayp_names, wayp_locs
+
+    def __point_names_to_locs(self, point_names):
+        locs = []
+        for point_name in point_names:
+            locs.append(self.points_dict[point_name])
+        return locs
 
     def __normalize_trans_mat(self):
         ''' normalize the transition matrix '''
@@ -244,7 +251,6 @@ class Graph():
                     G.add_edge(start_node_id, end_node_id)
                     print('start: %s (%d) end: %s (%d) value: %d' % (start_node, start_node_id, end_node, end_node_id, weight))
    
-
         return G
 
     def visualize_graph(self, graph, save_loc, g_type = 'relative'):
@@ -464,10 +470,13 @@ def _test():
     path2 = np.array([[0., 1.], [1., 1.], [2.,1.], [3.,0.], [4.,0.]])
     path3 = np.array([[0., 1.], [1., 1.], [2.,1.], [3.,0.], [4.,0.]])
     path4 = np.array([[4.,0.], [3.,0.], [2.,1.], [1., 1.], [0., 1.]])
-    a = g.analyse_full_signal(path1, add_to_trans_mat = True)
-    a = g.analyse_full_signal(path2, add_to_trans_mat = True)
-    a = g.analyse_full_signal(path3, add_to_trans_mat = True)
-    a = g.analyse_full_signal(path4, add_to_trans_mat = True)
+    a,l = g.analyse_full_signal(path1, add_to_trans_mat = True)
+    a,l = g.analyse_full_signal(path2, add_to_trans_mat = True)
+    a,l = g.analyse_full_signal(path3, add_to_trans_mat = True)
+    a,l = g.analyse_full_signal(path4, add_to_trans_mat = True)
+    print("Locations:")
+    print(a)
+    print(l)
     g.recalculate_trans_mat_dependencies()
     print(g.waypoints_indices_dict)
     print(g.destinations_indices_dict)
