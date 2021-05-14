@@ -232,6 +232,7 @@ class Graph():
                 if prob > 0.0:
                     min_steps = i
                     max_steps = ceil((1+detour_factor)*i)
+                    break
 
         return min_steps, max_steps
 

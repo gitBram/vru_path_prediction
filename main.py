@@ -81,7 +81,9 @@ def main():
     ''' do some probability predictions '''
     # recalculate the matrices
     g.recalculate_trans_mat_dependencies()
-
+    
+   
+    # for analysis in prob_checker.ipynb
     import pickle
     with open('data/pickle/mat.pickle', 'wb') as handle:
         pickle.dump(g.trans_mats_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -89,7 +91,7 @@ def main():
     with open('data/pickle/dict.pickle', 'wb') as handle:
         pickle.dump(g.points_indices_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    g.calculate_destination_probs(['d7', 'w6', 'wb'])
+    g.calculate_destination_probs(['d7', 'w6', 'w3'])
     lala = g.points_indices_dict
     s_ind = g.points_indices_dict['d7']
     d_ind = g.points_indices_dict['d6']
@@ -97,7 +99,6 @@ def main():
         tm = g.trans_mats_dict[i]
         print('Num of steps: {:.0f}, Prob: {:.4f}'.format(i, tm[s_ind, d_ind]))
         print(tm[s_ind, d_ind])
-
 
 
 def __return_waypoints_ind():
