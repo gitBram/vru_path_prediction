@@ -41,11 +41,13 @@ def main():
 
     grid_limits = (grid_x_min, grid_x_max, grid_y_min, grid_y_max)
 
-    
+    '''
     WPA = WaypointAnalyser(scene_data.traj_dataframe, grid_res, grid_limits, look_around_dist)
-    interest_areas = WPA.interest_area_searcher(save_img = True)
-    interest_points = WPA.interest_point_searcher(interest_areas, save_img = True, min_dist = 3)
-    
+    interest_areas = WPA.interest_area_searcher(savepath = 'data/images/WPA/areas.png')
+    interest_points = WPA.interest_point_searcher(interest_areas, savepath = 'data/images/WPA/points.png', min_dist = 3)
+    '''
+    interest_points = __return_waypoints_ind()
+
     # dest_points = np.array([
     #     [20,2],
     #     [30,2],
@@ -54,15 +56,68 @@ def main():
     #     [55,31],
 
     # ])
-    scene_data.plot_on_image([interest_points], save_path='waypoints.png')
-    scene_data.plot_dests_on_img('my_dests.png')
+    scene_data.plot_on_image([interest_points], save_path='data/images/data_vis/waypoints.png')
+    scene_data.plot_dests_on_img('data/images/data_vis/destinations.png')
 
     ''' Fit a graph to the found points '''
     print(scene_data.destination_matrix)
-    g = Graph.from_matrices(interest_points, scene_data.destination_matrix, 1., .2)
-    my_graph = g.create_graph(.05)
-    g.visualize_graph()
+    g = Graph.from_matrices(interest_points, scene_data.destination_matrix, 4, .2)
 
+    df_signals = scene_data.df_to_lst_realxy_mats()
+    g.analyse_multiple_full_signals(df_signals, add_to_trams_mat=True)
+    print(g.trans_mat)
+
+    my_graph = g.create_graph(.05)
+    g.visualize_graph(my_graph, 'data/images/graphs/graph_with_image.png', scene_loader = scene_data)
+
+    ''' test of displaying a path and its triggered waypoints '''
+    n, l = g.analyse_full_signal(df_signals[60], False)
+
+    f, a = scene_data.plot_on_image([df_signals[60], g.points_locations, l], 
+    save_path='data/images/example_paths/example_path.png', ms = [3, 6, 6])
+
+    f, a = scene_data.add_circles(f, a, g.points_locations, 4, 'data/images/example_paths/example_path_c.png')
+
+    ''' do some probability predictions '''
+    # recalculate the matrices
+    g.recalculate_trans_mat_dependencies()
+
+    import pickle
+    with open('data/pickle/mat.pickle', 'wb') as handle:
+        pickle.dump(g.trans_mats_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    with open('data/pickle/dict.pickle', 'wb') as handle:
+        pickle.dump(g.points_indices_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    g.calculate_destination_probs(['d7', 'w6', 'wb'])
+    lala = g.points_indices_dict
+    s_ind = g.points_indices_dict['d7']
+    d_ind = g.points_indices_dict['d6']
+    for i in range(1, len(g.trans_mats_dict.keys())):
+        tm = g.trans_mats_dict[i]
+        print('Num of steps: {:.0f}, Prob: {:.4f}'.format(i, tm[s_ind, d_ind]))
+        print(tm[s_ind, d_ind])
+
+
+
+def __return_waypoints_ind():
+    d = np.array([
+    [ 65, -36],
+    [ 56, -21],
+    [ 66, -46],
+    [ 58, -48],
+    [ 67, -29],
+    [ 61, -16],
+    [ 45, -32],
+    [ 71, -43],
+    [ 80, -52],
+    [ 68, -58],
+    [ 65, -54],
+    [ 48, -20],
+    [ 64, -21],
+    [ 46, -14]])
+
+    return d
 
 if __name__ == '__main__':
     main()

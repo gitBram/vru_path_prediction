@@ -28,7 +28,7 @@ class WaypointAnalyser:
         # interest_areas = self.interest_area_searcher(save_img = True)
         # interest_points = self.interest_point_searcher(interest_areas, save_img = True)
 
-    def interest_area_searcher(self, save_img = False):
+    def interest_area_searcher(self, savepath = None):
         ''' find for each grid cell a measure for being a point of interest '''
         n_x_cells, n_y_cells = self.n_x_cells, self.n_y_cells
 
@@ -59,20 +59,26 @@ class WaypointAnalyser:
         print(value_matrix)
         print(np.max(value_matrix))
 
-        if save_img:
-            self._save_2d_matrix_img(value_matrix, 'data/images/interest_areas.jpg', invert_y=True)
+        if savepath is not None:
+            self._save_2d_matrix_img(value_matrix, savepath, invert_y=True)
                 
         return value_matrix
 
-    def interest_point_searcher(self, interest_area_matrix, save_img=False, kernel_size = 3, min_dist = 6, thresh_rel = .1):
+    def interest_point_searcher(self, interest_area_matrix, savepath = None, kernel_size = 3, min_dist = 6, thresh_rel = .1):
+        # set up everything for easy picture saving if required
+        if savepath is not None:
+            def comb_p_name(path, suffix):
+                spl = path.split(".")
+                assert len(spl) == 2
+                return "%s%s%s%s%s"%(spl[0], '_', suffix, '.', spl[1])
 
         # blur matrix to smooth out information locally
         kernel = np.ones((3,3),np.float32)/16
         out_vals_blurred = cv.filter2D(interest_area_matrix,-1,kernel)
         out_vals_blurred_twice = cv.filter2D(out_vals_blurred,-1,kernel)
 
-        if save_img:
-            self._save_2d_matrix_img(out_vals_blurred_twice, 'data/images/interest_areas_bl.jpg', invert_y=True)
+        if savepath is not None:
+            self._save_2d_matrix_img(out_vals_blurred_twice, comb_p_name(savepath, 'int_area'), invert_y=True)
 
         
         # apply Laplacian to get stronger peak effect
@@ -80,14 +86,14 @@ class WaypointAnalyser:
         lapl = cv.Laplacian(out_vals_blurred_twice, ddepth, ksize=kernel_size)
         lapl_blurred = cv.filter2D(lapl,-1,kernel)
 
-        if save_img:
-            self._save_2d_matrix_img(lapl_blurred, 'data/images/laplacian.jpg', invert_y=True)
+        if savepath is not None:
+            self._save_2d_matrix_img(lapl_blurred, comb_p_name(savepath, 'lapl_blur'), invert_y=True)
 
         # find local peaks on laplacian to export as waypoints
         coordinates_wayp_bl = self._switch_columns(peak_local_max(-lapl_blurred, min_distance=min_dist, threshold_rel=thresh_rel))
 
-        if save_img:    
-            self._save_2d_matrix_scatter_img(lapl_blurred, coordinates_wayp_bl, 'data/images/laplacian.jpg', invert_y=True)
+        if savepath is not None:   
+            self._save_2d_matrix_scatter_img(lapl_blurred, coordinates_wayp_bl, comb_p_name(savepath, 'wayps'), invert_y=True)
 
         return self.__restore_orig_grid_lims(coordinates_wayp_bl)
 

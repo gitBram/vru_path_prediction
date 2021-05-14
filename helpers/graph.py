@@ -57,6 +57,15 @@ class Graph():
             dest_dict[key] = (mat_dest[i,0], mat_dest[i,1])
         return cls(wayp_dict, dest_dict, dist_threshold, std_graph_prune_threshold)  
 
+
+    def analyse_multiple_full_signals(self, signal_list, add_to_trams_mat):
+        return_lists = []
+
+        for signal in signal_list:
+            return_lists.append(self.analyse_full_signal(signal, add_to_trams_mat))
+
+        return return_lists
+
     def analyse_full_signal(self, path, add_to_trans_mat):
         ''' return a list of waypoints/destinations for a list of location measurements. For each 
         measurement, closest waypoint within threshold range is added. No repetitions 
@@ -68,7 +77,7 @@ class Graph():
 
         # get closest waypoint at each moment
         min_dist_ids = np.argmin(dist_sigs, axis=0)
-        accessed_points = [None]*path_len
+        accessed_points = [None] * path_len
 
         point_names = list(self.points_dict.keys())
         for i in range(path_len):
@@ -83,18 +92,24 @@ class Graph():
 
         accessed_points_f = np.array(accessed_points)[close_enough]
 
-        # filter to not include series of the same points following each other
-        accessed_points_f_scew = np.roll(accessed_points_f, 1)
-        accessed_points_f_scew[0] = -1 # in case last point is equal to first
-        repetitions = np.not_equal(accessed_points_f, accessed_points_f_scew, dtype = object)
+        try:
+            # filter to not include series of the same points following each other
+            accessed_points_f_scew = np.roll(accessed_points_f, 1)
+            accessed_points_f_scew[0] = -1 # in case last point is equal to first
+            repetitions = np.not_equal(accessed_points_f, accessed_points_f_scew, dtype = object)
+            
+            wayp_names = accessed_points_f[repetitions]
+            wayp_locs = self.__point_names_to_locs(wayp_names)
+
+            if add_to_trans_mat:
+                self.__add_path_to_trans_mat(wayp_names)
+
+            return wayp_names, wayp_locs
+        except:
+            warnings.warn("Unused path in transition matrix due to not reaching two waypoints", Warning)
+            return [], []
+
         
-        wayp_names = accessed_points_f[repetitions]
-        wayp_locs = self.__point_names_to_locs(wayp_names)
-
-        if add_to_trans_mat:
-            self.__add_path_to_trans_mat(wayp_names)
-
-        return wayp_names, wayp_locs
 
     def __point_names_to_locs(self, point_names):
         locs = []
@@ -109,7 +124,7 @@ class Graph():
             row = self.trans_mat[i]
             row_sum = np.sum(row) 
             if row_sum == 0.:
-                warnings.warn("dead points detected: noone leaving from this point", Warning)
+                warnings.warn("dead points detected: noone leaving from point %s"%(self.indices_points_dict[i]), Warning)
                 trans_mat_normed[i] = row
             else:
                 trans_mat_normed[i] = row/row_sum
@@ -120,31 +135,43 @@ class Graph():
         start_node = path[0]
         end_node = path[-1]
         # prob from start to end of path
-        path_prob = self.calculate_prob(start_node, end_node)
-        # prob from start to every destination
-        partial_dest_prob = dict()
+        path_prob = self.calculate_path_prob(path)
+        # prob from end to every destination
+        end_to_dest_prob = dict()
         for dest in self.destination_names:
-            partial_dest_prob[dest] = self.calculate_prob(end_node, dest)
-        # prob from end of path to every destination
-        full_dest_prob = dict()
+            end_to_dest_prob[dest] = self.calculate_prob(end_node, dest)
+        # prob from start of path to every destination
+        start_to_dest_prob = dict()
         for dest in self.destination_names:
-            full_dest_prob[dest] = self.calculate_prob(start_node, dest)
+            start_to_dest_prob[dest] = self.calculate_prob(start_node, dest)
         # full prob
         full_prob = dict()
         for dest in self.destination_names:
-            full_prob[dest] = path_prob * partial_dest_prob[dest] / full_dest_prob[dest]
+            full_prob[dest] = path_prob * end_to_dest_prob[dest] / start_to_dest_prob[dest]
         
         print('Path prob:')
         print(path_prob)
         print('Path end to Dest prob:')
-        print(partial_dest_prob)
+        print(end_to_dest_prob)
         print('Path start to Dest prob:')
-        print(full_dest_prob)
+        print(start_to_dest_prob)
         print('Full calculated probs:')
         print(full_prob)
         return full_prob
 
-    def calculate_prob(self, start_node, end_node, detour_factor = 0.2, dist_calc_method = 'graph'):
+    def calculate_path_prob(self, path):
+        # basic content check
+        for point in path:
+            assert point in self.points_names
+        
+        total_prob = 1.
+        for i in range(1, len(path)):
+            start_node = path[i-1]
+            end_node = path[i]
+            total_prob *= self.__calculate_prob_n_steps(start_node, end_node, 1, 1)
+        return total_prob
+
+    def calculate_prob(self, start_node, end_node, detour_factor = 0.2, dist_calc_method = 'matrices'):
         ''' using the graph, calculate probability of traveling from start to end node '''
         # make sure that given points are existing
         assert start_node in self.points_names
@@ -155,11 +182,9 @@ class Graph():
 
         return self.__calculate_prob_n_steps(start_node, end_node, min_steps, max_steps)
 
-    def __min_max_step_num(self, start_node, end_node, detour_factor = .2, method = 'graph'):
+    def __min_max_step_num(self, start_node, end_node, detour_factor = .2, method = 'matrices'):
         ''' calculate the minimum and maximum steps between 2 points '''
         ''' method can be either graph based or distance based '''
-
-
         # get indices
         start_node_id = self.points_indices_dict[start_node]
         end_node_id = self.points_indices_dict[end_node]
@@ -182,15 +207,32 @@ class Graph():
             # finally decide minimum and maximum number of steps for certain trajectory
             min_steps = floor(max(1, l2_travel_dist/avg_dist))
             max_steps = ceil(l1_travel_dist + total_added_factor)
-        else: # method is graph based
+        elif method == 'graph': # method is graph based
             try:
                 graph = self.std_graph
                 shortest_path = nx.shortest_path(graph, start_node_id, end_node_id) 
                 min_steps = len(shortest_path) - 1 
                 max_steps = ceil((1+detour_factor)*min_steps)
             except:
+                warnings.warn("No viable path found between %s and %s"%(start_node, end_node), Warning)
                 min_steps = 0
                 max_steps = 0
+        elif method == 'matrices':
+            # Let's say that we expect paths not to be longer than 10 steps
+            max_n_steps = 10
+
+            # now let's check after how many steps end_point can be reached from start_point
+            for i in range(1,max_n_steps + 1):
+                prob = self.__calculate_prob_n_steps(start_node, end_node, i, i)
+                # prob = self.trans_mats_dict[i][start_node_id, end_node_id]
+
+                min_steps = 0
+                max_steps = 0
+
+                if prob > 0.0:
+                    min_steps = i
+                    max_steps = ceil((1+detour_factor)*i)
+
         return min_steps, max_steps
 
     def __calculate_prob_n_steps(self, start_node, end_node, min_steps, max_steps, recalculate_mats = True):
@@ -249,12 +291,20 @@ class Graph():
 
                 if weight > threshold:
                     G.add_edge(start_node_id, end_node_id)
-                    print('start: %s (%d) end: %s (%d) value: %d' % (start_node, start_node_id, end_node, end_node_id, weight))
+                    # print('start: %s (%d) end: %s (%d) value: %d' % (start_node, start_node_id, end_node, end_node_id, weight))
    
         return G
 
-    def visualize_graph(self, graph, save_loc, g_type = 'relative'):
+    def visualize_graph(self, graph, save_loc, g_type = 'relative', scene_loader = None):
         ''' visualize graph (nodes and edges with its weights, absolute or relative ) '''
+
+        # remove the possibly currently existing plot
+        plt.clf()
+
+        # if available, plot the image of the scene in the background
+        if not scene_loader is None:
+            scene_loader.plot_dests_on_img(save_loc)
+
         #check inputs
         assert save_loc is not None
         assert g_type == 'absolute' or g_type  == 'relative'
@@ -287,9 +337,9 @@ class Graph():
         options = {
             "node_color": node_colors,
             "edge_color": weights,
-            "width": 4,
-            "edge_cmap": plt.cm.Blues,
-            "with_labels": True,
+            "width": 1,
+            "edge_cmap": plt.cm.autumn,
+            "with_labels": False,
             "connectionstyle":'arc3, rad = 0.1'
         }
         graph_fig = nx.draw(graph, node_locations, **options)
@@ -430,6 +480,10 @@ class Graph():
     @property 
     def points_indices_dict(self):
         return dict(zip(self.points_names, range(len(self.points_names))))
+
+    @property 
+    def indices_points_dict(self):
+        return dict(zip(range(len(self.points_names)), self.points_names))
     
     @property 
     def waypoints_indices_dict(self):
@@ -484,11 +538,12 @@ def _test():
     print(g.trans_mat_normed)
     my_graph = g.create_graph(.05)
     g.visualize_graph(my_graph, './data/images/graph.png', g_type='relative')
-    # print(g.calculate_prob('w1', 'd1'))
-    print(g.calculate_destination_probs(['d3', 'w4', 'w2', 'w3']))
 
-    # print(g.trans_mats_dict[3])
-    # print(np.dot(np.dot(g.trans_mat_normed, g.trans_mat_normed), g.trans_mat_normed))
+
+    ''' Test for calculate_path_prob '''
+    assert g.calculate_path_prob(['d1', 'w1', 'w2', 'w3']) == 1*.75*.25
+
+
     return None
 
 if __name__ == '__main__':

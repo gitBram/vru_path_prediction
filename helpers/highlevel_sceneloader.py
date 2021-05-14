@@ -27,9 +27,13 @@ class HighLevelSceneLoader():
     self.dataset_name = None
     self.scene_name = None
 
+    #save col names for this df
+    self._df_split_col = None
+    self._df_x_col = None
+    self._df_y_col = None
+    
   def __populate_dest_dict(self):
     return None
-
 
 
   def __tree_iter_to_dict(self, node, val_type):
@@ -69,8 +73,15 @@ class HighLevelSceneLoader():
     return img_bound_dict
 
   
-  def load_ind(self, root_datasets, file_id):
+  def load_ind(self, root_datasets, file_id, 
+  x_col = 'pos_x', y_col = 'pos_y', split_col = 'agent_id'):
 
+      # set the col names correctly
+      self.df_split_col = split_col
+      self.df_x_col = x_col
+      self.df_y_col = y_col
+
+      # import the data importer  
       from OpenTraj.toolkit.loaders import loader_ind
 
       # import ind data
@@ -86,9 +97,16 @@ class HighLevelSceneLoader():
       self.dataset_name = 'ind'
       self.scene_name = str(file_id)
 
-  def load_sdd(self, opentraj_root, scene_name, scene_video_id):
-      from toolkit.loaders.loader_sdd import load_sdd, load_sdd_dir
+  def load_sdd(self, opentraj_root, scene_name, scene_video_id, 
+  x_col = 'pos_x', y_col = 'pos_y', split_col = 'agent_id'):
 
+      # set the col names correctly
+      self.df_split_col = split_col
+      self.df_x_col = x_col
+      self.df_y_col = y_col
+
+      # import the data importer  
+      from toolkit.loaders.loader_sdd import load_sdd, load_sdd_dir
 
       # fixme: replace OPENTRAJ_ROOT with the address to root folder of OpenTraj
       sdd_root = os.path.join(opentraj_root, 'datasets', 'SDD')
@@ -118,6 +136,7 @@ class HighLevelSceneLoader():
     ''' Plot a list of xy matrices on top of an image '''
     if ax is None:
       fig, ax = plt.subplots()
+    
     ax.set_aspect('equal', adjustable='box')
     extent_bounds = [self.image_limits['x_min'], self.image_limits['x_max'],
     self.image_limits['y_min'], self.image_limits['y_max']]
@@ -129,24 +148,45 @@ class HighLevelSceneLoader():
           a.invert_yaxis()
       except:
         ax.invert_yaxis()
-    for xy in lst_realxy_mats:
-      ax.scatter(xy[:, 0], xy[:, 1], s=ms)
+    for xy, i in zip(lst_realxy_mats, range(len(lst_realxy_mats))):
+      if len(xy) > 0:
+        xy_np = np.array(xy)
+
+        # get the correct marker size
+        m_size = None
+        if type(ms) == list:
+          m_size = ms[i]
+        else:
+          m_size = ms
+        ax.scatter(xy_np[:, 0], xy_np[:, 1], s=m_size)
 
     if save_path is not None:
       plt.savefig(save_path)
-    return ax
+    return fig, ax
 
-  def df_to_lst_realxy_mats(self, df, x_col = 'pos_x', y_col = 'pos_y', split_col = 'agent_id'):
+  def add_circles(self, fig, ax, centres_mat, radius, savepath = None, color='b'):
+    if ax is None:
+      fig, ax = plt.subplots()
+    for centre in centres_mat:
+      circle = plt.Circle((centre[0], centre[1]), radius, color=color, fill=False)
+      ax.add_patch(circle)
+    if savepath is not None:
+      fig.savefig(savepath)
+    return fig, ax
+
+  def df_to_lst_realxy_mats(self):
     ''' Convert a dataframe to a list of xy matrices based on a value in split_col '''
-    split_ids = df[split_col].unique()
+    df = self.traj_dataframe.copy()
+    sc = self.df_split_col
+    split_ids = df[sc].unique()
     out_xy = []
     for split_id in split_ids:
-      out_xy.append(df[df[split_col]==split_id][[x_col, y_col]].to_numpy())
+      out_xy.append(df[df[self.df_split_col]==split_id][[self.df_x_col, self.df_y_col]].to_numpy())
     return out_xy        
 
   def plot_all_trajs_on_img(self, save_path):
     ''' Plot all the trajectories on the background image '''
-    l = self.df_to_lst_realxy_mats(self.traj_dataframe)
+    l = self.df_to_lst_realxy_mats()
     ax = self.plot_on_image(l, save_path=save_path, invert_y=False)
     return ax
 
@@ -157,9 +197,29 @@ class HighLevelSceneLoader():
     return ax
 
   @property
+  def df_split_col(self):
+    return self._df_split_col
+  @df_split_col.setter
+  def df_split_col(self, data):
+    self._df_split_col = data
+
+  @property
+  def df_x_col(self):
+    return self._df_x_col    
+  @df_x_col.setter
+  def df_x_col(self, data):
+    self._df_x_col = data
+
+  @property
+  def df_y_col(self):
+    return self._df_y_col    
+  @df_y_col.setter
+  def df_y_col(self, data):
+    self._df_y_col = data
+
+  @property
   def image(self):
     return self._image
-
   @image.setter
   def image(self, im):
     self._image = im
