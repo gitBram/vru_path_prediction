@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 import os, sys
 import matplotlib.pyplot as plt
 import numpy as np
+from math import floor, ceil
 
 class HighLevelSceneLoader():
   def __init__(self, img_bound_file_loc, dest_file_loc):
@@ -132,10 +133,12 @@ class HighLevelSceneLoader():
       self.dataset_name = 'sdd'
       self.scene_name = str(scene_name) + str(scene_video_id)
 
-  def plot_on_image(self, lst_realxy_mats, ms = 3, invert_y = False, save_path = None, ax = None):
+  def plot_on_image(self, lst_realxy_mats, ms = 3, invert_y = False, save_path = None, ax=None):
     ''' Plot a list of xy matrices on top of an image '''
     if ax is None:
-      fig, ax = plt.subplots()
+        ax = plt.gca()
+    else:
+      plt.sca(ax)
     
     ax.set_aspect('equal', adjustable='box')
     extent_bounds = [self.image_limits['x_min'], self.image_limits['x_max'],
@@ -161,18 +164,69 @@ class HighLevelSceneLoader():
         ax.scatter(xy_np[:, 0], xy_np[:, 1], s=m_size)
 
     if save_path is not None:
+      plt.gcf()
       plt.savefig(save_path)
-    return fig, ax
+    return None
 
-  def add_circles(self, fig, ax, centres_mat, radius, savepath = None, color='b'):
+  def add_circles(self, centres_mat, radius, ax = None, save_path = None, color='b'):
     if ax is None:
-      fig, ax = plt.subplots()
+        ax = plt.gca()
+    else:
+      plt.sca(ax)
+
     for centre in centres_mat:
       circle = plt.Circle((centre[0], centre[1]), radius, color=color, fill=False)
       ax.add_patch(circle)
-    if savepath is not None:
-      fig.savefig(savepath)
-    return fig, ax
+    if save_path is not None:
+      plt.gcf()
+      plt.savefig(save_path)
+    return None
+
+  def plot_dest_probs(self, dest_locs, dest_probs, min_marker_size, max_marker_size, ax = None, save_path = None):
+    ''' for plotting the destination probabilities, visible by the size of the probability '''
+    # basic checks
+    assert len(dest_locs) == len(dest_probs) 
+    assert max_marker_size > min_marker_size 
+
+    # assert numpy format
+    dest_locs_mat = np.array(dest_locs)  
+    dest_probs_mat = np.array(dest_probs)
+
+    # pyplot things
+    if ax is None:
+        ax = plt.gca()
+    else:
+      plt.sca(ax)
+      
+    # figure out how to scale probs to marker size
+    probs_min = np.nanmin(dest_probs_mat)
+    probs_max = np.nanmax(dest_probs_mat)
+    p_s_scalef = (max_marker_size-min_marker_size)/(probs_max - probs_min)
+
+    # construct list of marker sizes for each point    
+    num_locs = len(dest_locs_mat)
+    sizes = []
+    for i in range(num_locs):
+      # x = dest_locs_mat[i, 0]
+      # y = dest_locs_mat[i, 1]
+      p = dest_probs[i]
+
+      # put in try as NaN is possible ofr unreachable dests
+      try:
+        size = floor(min_marker_size + p_s_scalef * p)
+        sizes.append(size)
+      except:
+        sizes.append(min_marker_size)
+    
+    # plot on the figure
+    ax.scatter(dest_locs_mat[:, 0], dest_locs_mat[:, 1], s=sizes)
+
+    # save if needed
+    if save_path is not None:
+      plt.gcf()
+      plt.savefig(save_path)
+
+    return None
 
   def df_to_lst_realxy_mats(self):
     ''' Convert a dataframe to a list of xy matrices based on a value in split_col '''

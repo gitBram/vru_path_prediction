@@ -73,12 +73,19 @@ def main():
     ''' test of displaying a path and its triggered waypoints '''
     n, l = g.analyse_full_signal(df_signals[60], False)
 
-    f, a = scene_data.plot_on_image([df_signals[60], g.points_locations, l], 
+    # create figure and axes
+    fig1, ax1 = plt.subplots()
+    scene_data.plot_on_image([df_signals[60], g.points_locations, l], 
     save_path='data/images/example_paths/example_path.png', ms = [3, 6, 6])
 
-    f, a = scene_data.add_circles(f, a, g.points_locations, 4, 'data/images/example_paths/example_path_c.png')
+    fig2, ax2 = plt.subplots()
+    scene_data.plot_on_image([df_signals[60], g.points_locations, l], ms = [3, 6, 6])
+
+    scene_data.add_circles(g.points_locations, 4, save_path='data/images/example_paths/example_path_c.png', ax=ax1)
 
     ''' do some probability predictions '''
+
+    '''
     # recalculate the matrices
     g.recalculate_trans_mat_dependencies()
     
@@ -91,7 +98,31 @@ def main():
     with open('data/pickle/dict.pickle', 'wb') as handle:
         pickle.dump(g.points_indices_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    g.calculate_destination_probs(['d7', 'w6', 'w3'])
+    g.calculate_destination_probs(['d7'])
+    '''
+
+    # displaying the probabilities of the destinations 
+    dest_probs_dict = g.calculate_destination_probs(n)
+    dest_probs_l = list(dest_probs_dict.values())
+    dest_locs_dict_l = g.destination_vals    
+    scene_data.plot_dest_probs(dest_locs_dict_l, dest_probs_l, 3, 200, ax1, 'data/images/dest_pred/dest_pred.png')
+    
+    # let's have a look what the probabilitites look like when we walk across the street
+    n2 = ['w9', 'wa', 'w3', 'w6']
+    dest_probs_dict = g.calculate_destination_probs(n2)
+    dest_probs_l = list(dest_probs_dict.values())
+    dest_locs_dict_l = g.destination_vals    
+    scene_data.plot_dest_probs(dest_locs_dict_l, dest_probs_l, 3, 200, ax2, 'data/images/dest_pred/dest_pred2.png')
+    
+    # and cross again!
+    n3 = ['w9', 'wa', 'w3', 'w6', 'wb']
+    dest_probs_dict = g.calculate_destination_probs(n3)
+    dest_probs_l = list(dest_probs_dict.values())
+    dest_locs_dict_l = g.destination_vals    
+    scene_data.plot_dest_probs(dest_locs_dict_l, dest_probs_l, 3, 200, ax1, 'data/images/dest_pred/dest_pred3.png')
+    
+    print(g.num_dest_arrivers_dict)
+
     lala = g.points_indices_dict
     s_ind = g.points_indices_dict['d7']
     d_ind = g.points_indices_dict['d6']

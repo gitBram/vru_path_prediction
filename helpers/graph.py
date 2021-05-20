@@ -130,8 +130,49 @@ class Graph():
                 trans_mat_normed[i] = row/row_sum
         
         self.trans_mat_normed = trans_mat_normed
+ 
 
     def calculate_destination_probs(self, path):
+        ''' 
+        Calculate the probability of the current path being one towards each of the destinations.
+        Expansion on __calculate_destination_probs_back in order to also get estimates if only one point is known
+        '''
+        # Basic check
+        assert len(path) > 0
+
+        for point in path:
+            assert point in self.points_names
+
+        # Different algorithm based on whether there is 1 or multiple node observations available
+        if len(path) == 1:
+            # only one observation is available - we will expand by checking the connected nodes to this node
+            start_id = self.points_indices_dict[path[0]]
+
+            # get all the points that this point is connected to according to graph
+            connected_ids = np.where(self.trans_mat_normed[start_id,:]>0.)
+            connected_trans_vals = self.trans_mat_normed[start_id, connected_ids]
+
+            connected_ids = np.squeeze(connected_ids)
+            connected_trans_vals = np.squeeze(connected_trans_vals)
+            # get the average over all these connected components
+            prob_dict = dict()
+
+            for connected_id, connected_trans_val in zip(connected_ids, connected_trans_vals):
+                connected_point_name = self.indices_points_dict[connected_id]
+                prob_dict_c = self.__calculate_destination_probs_back([path[0], connected_point_name])
+
+                for dest in prob_dict_c.keys():
+                    try:
+                        prob_dict[dest] += prob_dict_c[dest] * connected_trans_val
+                    except:
+                        prob_dict[dest] = prob_dict_c[dest] * connected_trans_val
+
+        else:
+            # multiple observations are available
+            prob_dict = self.__calculate_destination_probs_back(path)
+        return prob_dict
+    
+    def __calculate_destination_probs_back(self, path):
         start_node = path[0]
         end_node = path[-1]
         # prob from start to end of path
@@ -176,6 +217,10 @@ class Graph():
         # make sure that given points are existing
         assert start_node in self.points_names
         assert end_node in self.points_names
+
+        # bug fix: if calculating from point to itself, return prob 1.0
+        if start_node == end_node:
+            return 1. 
 
         min_steps, max_steps = self.__min_max_step_num(start_node, end_node, method=dist_calc_method)
         #TODO: check whether some lower limit should be set or whether it is unnecesary 
@@ -443,6 +488,17 @@ class Graph():
         ''' calculate distances '''
         return np.sqrt((node_list_1**2).sum(axis=1)[:, None] - 2 * node_list_1.dot(node_list_2.transpose()) + ((node_list_2**2).sum(axis=1)[None, :]))
 
+    
+
+    def subsample_graph(self, resolution):
+        #TODO
+        ''' 
+        One problem with using only waypoints is that the probabilities do not get updated regularly.
+        We will create points in-between. 
+        '''
+        subsample_mat = None
+        return subsample_mat
+
     @property  
     def threshold(self):
         return self._threshold
@@ -513,6 +569,19 @@ class Graph():
     def stored_mats_keys(self):
         return list(self.trans_mats_dict.keys())
 
+    @property
+    def num_dest_arrivers_dict(self):
+        d = dict()
+
+        for i in range(self.num_destinations):
+            name = self.destination_names[i]
+            id = self.points_indices_dict[name]
+            count = np.sum(self.trans_mat[:, id])
+
+            d[name] = int(count)
+        return d
+            
+
 # Test function for module  
 def _test():
     ''' test graph class ''' 
@@ -533,14 +602,12 @@ def _test():
     print(a)
     print(l)
     g.recalculate_trans_mat_dependencies()
-    print(g.waypoints_indices_dict)
-    print(g.destinations_indices_dict)
-    print(g.trans_mat)
-    print(g.trans_mat_normed)
     my_graph = g.create_graph(.05)
     g.visualize_graph(my_graph, './data/images/graph.png', g_type='relative')
 
-
+    print('here')
+    g.calculate_destination_probs(['w1'])
+    print(g.calculate_prob('d1', 'd1'))
     ''' Test for calculate_path_prob '''
     assert g.calculate_path_prob(['d1', 'w1', 'w2', 'w3']) == 1*.75*.25
 
