@@ -29,10 +29,10 @@ def main():
     margin = 2
     look_around_dist = 3
 
-    grid_x_min = int(min(scene_data.traj_dataframe['pos_x']) - margin) # [m]
-    grid_x_max = int(max(scene_data.traj_dataframe['pos_x']) + margin) # [m]
-    grid_y_min = int(min(scene_data.traj_dataframe['pos_y']) - margin) # [m]
-    grid_y_max = int(max(scene_data.traj_dataframe['pos_y']) + margin)  # [m]
+    # grid_x_min = int(min(scene_data.traj_dataframe['pos_x']) - margin) # [m]
+    # grid_x_max = int(max(scene_data.traj_dataframe['pos_x']) + margin) # [m]
+    # grid_y_min = int(min(scene_data.traj_dataframe['pos_y']) - margin) # [m]
+    # grid_y_max = int(max(scene_data.traj_dataframe['pos_y']) + margin)  # [m]
 
     grid_x_min = 6
     grid_x_max = 110
