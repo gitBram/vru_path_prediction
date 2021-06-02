@@ -133,8 +133,10 @@ class HighLevelSceneLoader():
       self.dataset_name = 'sdd'
       self.scene_name = str(scene_name) + str(scene_video_id)
 
-  def plot_on_image(self, lst_realxy_mats, ms = 3, invert_y = False, save_path = None, ax=None):
+  def plot_on_image(self, lst_realxy_mats, ms = 3, invert_y = False, save_path = None, ax=None, col_num_dicts = None):
     ''' Plot a list of xy matrices on top of an image '''
+
+    # Set up axis 
     if ax is None:
         ax = plt.gca()
     else:
@@ -145,15 +147,28 @@ class HighLevelSceneLoader():
     self.image_limits['y_min'], self.image_limits['y_max']]
     ax.imshow(self.image, extent=list(extent_bounds))
 
+    # in-built possibility to reverse y-axis
     if invert_y:
       try:
         for a in ax:
           a.invert_yaxis()
       except:
         ax.invert_yaxis()
-    for xy, i in zip(lst_realxy_mats, range(len(lst_realxy_mats))):
+
+    for xy, i, col_num_dict in zip(lst_realxy_mats, range(len(lst_realxy_mats)), col_num_dicts):
+   
+      # Plot if there is actual data
       if len(xy) > 0:
         xy_np = np.array(xy)
+        my_shape = xy_np.shape
+
+        # Check that data is not 1d, can be the case if only one point is fed and matrix is squeezed
+        if len(my_shape) == 1:
+          xy_np = xy_np.reshape(1,-1)
+
+        # Reshape 3d (batched) data for easy plotting
+        if len(my_shape) == 3:
+          xy_np = xy_np.reshape(-1, my_shape[-1])         
 
         # get the correct marker size
         m_size = None
@@ -161,7 +176,7 @@ class HighLevelSceneLoader():
           m_size = ms[i]
         else:
           m_size = ms
-        ax.scatter(xy_np[:, 0], xy_np[:, 1], s=m_size)
+        ax.scatter(xy_np[:, col_num_dict['x']], xy_np[:, col_num_dict['y']], s=m_size)
 
     if save_path is not None:
       plt.gcf()

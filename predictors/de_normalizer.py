@@ -60,7 +60,7 @@ class DataDeNormalizer():
         return df_c
 
 
-    def scale_tensor(self, data, scale_col_list, action, in_out):
+    def scale_tensor(self, data, action, in_out):
         ''' 
         (De)Normalize a matrix of TF data. Ordered col list is used to retrieve the 
         '''
@@ -74,6 +74,9 @@ class DataDeNormalizer():
         if in_out not in allowed_inout:
             raise ValueError("Invalid in_out. Expected one of: %s" % allowed_inout)
 
+        # Get dtype of input to correctly create the tensors later
+        in_dtype = data.dtype
+
         # Get a list in correct order of mu's and std's to efficiently (de)normalize using TF
         my_scale_dict = None
         my_scale_dict = self.in_dict if in_out == "in" else self.out_dict
@@ -81,8 +84,8 @@ class DataDeNormalizer():
         mu_list = [None] * len(my_scale_dict)
         std_list = [None] * len(my_scale_dict)
         
-        for col_name in scale_col_list:
-
+        # for col_name in scale_col_list:
+        for col_name in list(my_scale_dict.keys()):
             mu_list[my_scale_dict[col_name]] = self.scale_dict[col_name]["mu"]
             std_list[my_scale_dict[col_name]] = self.scale_dict[col_name]["std"]
 
@@ -93,8 +96,8 @@ class DataDeNormalizer():
         o_shape = data.shape
         normed_data = tf.reshape(data, (o_shape[0]*o_shape[1], o_shape[2]))
         # Create tf tensors from the premade lists
-        mu_tensor = tf.constant(mu_list, dtype='double')
-        std_tensor = tf.constant(std_list, dtype='double')
+        mu_tensor = tf.constant(mu_list, dtype=in_dtype)
+        std_tensor = tf.constant(std_list, dtype=in_dtype)
         # (de)normalize
         if action == "normalize":
             normed_data = tf.map_fn(lambda line: tf.math.subtract(line,mu_tensor), normed_data)
