@@ -53,8 +53,11 @@ class TFDataSet():
                         feature_list_in = ['pos_x', 'pos_y'], feature_list_out = ['pos_x', 'pos_y'], # all features that will be in in-/output
                         scale_list = ['pos_x', 'pos_y'],
                         id_col_name = "agent_id", x_col_name = 'pos_x', y_col_name = 'pos_y',
-                        seq_in_length = None, seq_stride = None):
-
+                        seq_in_length = None, seq_stride = None, noise_std = None, n_repeats = 1):
+        '''
+        Create fixed length dataset (seq_in_length and seq_stride not None) or simple zero padded dataset with full paths (seq_in_length and seq_stride None)
+        Add noise to test dataset (noise_std is standard deviation in meter) if noise_std is not None
+        '''
         # Get everything for getting correct in and output columns
         s_in, s_out = set(feature_list_in), set(feature_list_out)
         l_diff = list(s_out - s_in)
@@ -100,22 +103,30 @@ class TFDataSet():
 
             df_train = normer.scale_dataframe(df_train, scale_list, "normalize")
             df_val = normer.scale_dataframe(df_val, scale_list, "normalize")
-            df_test = normer.scale_dataframe(df_test, scale_list, "normalize")
+            df_test = normer.scale_dataframe(df_test, scale_list, "normalize")        
+        
+        # Set everything up for adding noise
+        noise_std_vector = None
+        if normalize_data:
+            noise_std_vector = normer.generate_noise_std_vect(noise_std, ['pos_x', 'pos_y'], headers_id_dropped)
+        else:
+            noise_std_vector = None
         
         ds_dict = dict()    
 
-        ds_dict["train"] = cls.__df_to_ds(cls, df_train, id_col_name, label_length, in_col_nums, out_col_nums, do_shuffle, shuffle_buffer_size, batch_size, seq_in_length, seq_stride)
+        ds_dict["train"] = cls.__df_to_ds(cls, df_train, id_col_name, label_length, in_col_nums, out_col_nums, do_shuffle, shuffle_buffer_size, batch_size, seq_in_length, seq_stride, noise_std_vector, n_repeats=n_repeats)
         ds_dict["test"] = cls.__df_to_ds(cls, df_test, id_col_name, label_length, in_col_nums, out_col_nums, do_shuffle, shuffle_buffer_size, batch_size, seq_in_length, seq_stride)
-        ds_dict["val"] = cls.__df_to_ds(cls, df_val, id_col_name, label_length, in_col_nums, out_col_nums, do_shuffle, shuffle_buffer_size, batch_size, seq_in_length, seq_stride)
+        ds_dict["val"] = cls.__df_to_ds(cls, df_val, id_col_name, label_length, in_col_nums, out_col_nums, do_shuffle, shuffle_buffer_size, batch_size, seq_in_length, seq_stride, noise_std_vector, n_repeats=n_repeats)
        
         return cls(ds_dict, batch_size, seq_in_length, label_length, train_perc, test_perc, val_perc,
         in_dict, out_dict, x_col_name, y_col_name, do_shuffle, normer=normer, scale_cols=scale_list)
 
     def __df_to_ds(self, df, id_col_name, lbl_length, in_col_nums, out_col_nums, shuffle, 
-    shuffle_buffer_size, batch_size, seq_in_length, seq_stride):
+    shuffle_buffer_size, batch_size, seq_in_length, seq_stride, noise_std_vector=None, n_repeats=None):
         ''' 
         Go from a pd dataframe to a TF dataset 
         If seq_in_length is None or seq_stride is None => ds with fixed length created, otherwise zero padded
+        If noise_std_vector is not None, noise is added
         '''
         ds = None
         df_c = df.copy()
@@ -135,7 +146,18 @@ class TFDataSet():
                 
                 path_np = windower(path_np, seq_in_length + lbl_length)
 
+                # if no windows were returned --> skip to next path
+                if path_np.size == 0:
+                    continue                
+
             path_ds = tf.data.Dataset.from_tensors(path_np)
+            
+            # Add noise if wanted
+            if noise_std_vector is not None:
+                def add_noise(x):                
+                    noise = tf.random.normal(shape=x.shape, mean=0., stddev=noise_std_vector, dtype=x.dtype)
+                    return x + noise
+                path_ds = path_ds.map(add_noise)
             
             try:
                 # Add to dataset
@@ -145,7 +167,7 @@ class TFDataSet():
                 ds = path_ds
 
         # Let's remove the first dimension (*random*,timesteps, feature_num) to (timesteps, feature_num)
-        ds = ds.flat_map(lambda x: tf.data.Dataset.from_tensor_slices(x))
+        ds = ds.flat_map(lambda x: tf.data.Dataset.from_tensor_slices(x))        
         
         ds = ds.map(lambda window: (tf.transpose(tf.gather(tf.transpose(window[:-lbl_length]),in_col_nums)), tf.transpose(tf.gather(tf.transpose(window[-lbl_length:]),out_col_nums))))
 
@@ -164,7 +186,7 @@ class TFDataSet():
 
         ds = ds.map(pad_or_trunc)
 
-        return ds
+        return ds.repeat(n_repeats)
 
     def example(self, ds_type):
         ''' Return an example batch from train/test/val dataset, denorm if wanted (and only if denorm available ofc) '''

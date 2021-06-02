@@ -78,16 +78,16 @@ class DataDeNormalizer():
         in_dtype = data.dtype
 
         # Get a list in correct order of mu's and std's to efficiently (de)normalize using TF
-        my_scale_dict = None
-        my_scale_dict = self.in_dict if in_out == "in" else self.out_dict
+        my_inout_dict = None
+        my_inout_dict = self.in_dict if in_out == "in" else self.out_dict
 
-        mu_list = [None] * len(my_scale_dict)
-        std_list = [None] * len(my_scale_dict)
+        mu_list = [None] * len(my_inout_dict)
+        std_list = [None] * len(my_inout_dict)
         
         # for col_name in scale_col_list:
-        for col_name in list(my_scale_dict.keys()):
-            mu_list[my_scale_dict[col_name]] = self.scale_dict[col_name]["mu"]
-            std_list[my_scale_dict[col_name]] = self.scale_dict[col_name]["std"]
+        for col_name in list(my_inout_dict.keys()):
+            mu_list[my_inout_dict[col_name]] = self.scale_dict[col_name]["mu"]
+            std_list[my_inout_dict[col_name]] = self.scale_dict[col_name]["std"]
 
             mu_list = [x if x is not None else 0. for x in mu_list]
             std_list = [x if x is not None else 1. for x in std_list]
@@ -109,6 +109,22 @@ class DataDeNormalizer():
         normed_data = tf.reshape(normed_data, o_shape)
 
         return normed_data
+
+    def generate_noise_std_vect(self, std_orig_scale, noise_cols, ordered_col_list):
+        '''
+        We want to add some noise in the dataset pipeline, but need to take into account the used scale factors
+        Therefore, make a vector of to be used std deviations based on standard deviations specified on 1m level.
+        '''
+        ordered_col_list_d = dict(zip(ordered_col_list, list(range(len(ordered_col_list)))))
+        std_list = [None] * len(ordered_col_list)        
+        
+        # for col_name in scale_col_list:
+        for col_name in noise_cols:
+            std_list[ordered_col_list_d[col_name]] = std_orig_scale/self.scale_dict[col_name]["std"]
+
+        std_list = [x if x is not None else 0. for x in std_list]
+
+        return std_list
 
     # Getters and Setters
     @property

@@ -1,9 +1,14 @@
 ''' class for training deep learning models and setting parameters for the training phase'''
 
 import tensorflow as tf
+from tensorflow.python import keras
+from keras.layers.core import Lambda
+from keras import backend as K
+from keras import Model
+from keras.layers import Dense, LSTM, Reshape, InputLayer, Concatenate, Dropout
 
 class DLTrainer:
-    def __init__(self, max_epochs = 50, patience = 2, loss_function = tf.losses.MeanSquaredError(), optimizer = tf.keras.optimizers.Adam(), metric = tf.metrics.MeanAbsoluteError()):
+    def __init__(self, max_epochs, patience, loss_function = tf.losses.MeanSquaredError(), optimizer = tf.keras.optimizers.Adam(), metric = tf.metrics.MeanAbsoluteError()):
         self._max_epochs = max_epochs
         self._patience = patience
         self._loss_function = loss_function
@@ -39,57 +44,130 @@ class DLTrainer:
         return history
 
     def load_weights(self, save_path):
+        # do a prediction in order to initialize the model...
+        self.model(tf.zeros((1, self.num_in_steps, self.num_in_features)))
+
+        # now really load the weights
         self.model.load_weights(save_path)
 
-    def predict(self, input_tensor, scale_input_tensor):
+    def predict(self, input_tensor, scale_input_tensor, n_evaluations = 1):
+        ''' 
+        Use the model to do a prediction
+        '''
         # check that input is 3D (batch - time - feature)
         if len(input_tensor.shape) <= 2:
             input_tensor = tf.reshape(input_tensor, [1, -1, self.num_in_features])
         
-        if scale_input_tensor:
-            output = self.model(self.scaler.scale_tensor(input_tensor, "normalize", "in"))
-        else:
-            output = self.model(input_tensor)
+        # sanity check
+        if n_evaluations < 1:
+            raise ValueError("Number of evaluations should be 1 or larger. %d was received." % (n_evaluations))
 
-        # scale if needed
-        if self.scaler is not None:
-            output = self.scaler.scale_tensor(output, "denormalize", "out")
+        if not (type(n_evaluations)==int):
+            raise ValueError("Number of evaluations should be of type int. %s type was received." % (type(n_evaluations)))
+        
+        
+        composed_output = composed_output_s = None
 
-        return output
+        for i in range(n_evaluations):
+            # scale input tensor if requested, get prediction
+            if scale_input_tensor:
+                output = self.model(self.scaler.scale_tensor(input_tensor, "normalize", "in"))
+            else:
+                output = self.model(input_tensor)
+
+            # scale output tensor if needed
+            if self.scaler is not None:
+                output_s = self.scaler.scale_tensor(output, "denormalize", "out")
+            else:
+                output_s = output
+            
+            # aggregate the outputs, only useful for epistemic 
+            try:
+                composed_output_s = tf.concat([composed_output_s,output_s], axis=1)
+                composed_output = tf.concat([composed_output,output], axis=1)
+            except:
+                composed_output_s = output_s
+                composed_output = output
+
+        return composed_output, composed_output_s
+
+        
     
     def predict_repetitively(self, input_tensor, scale_input_tensor, num_repetitions, fixed_len_input):
+        # Make sure input tensor is 3d 
+        if len(input_tensor.shape) <= 2:
+            input_tensor = tf.expand_dims(input_tensor, axis=0)
+
+        # Get type same with output of model (float instead of double) to be able to concat
         assembled_input = tf.cast(input_tensor, dtype=tf.float32)
         assembled_output = None
         for i in range(num_repetitions):
             # get one prediction
-            new_output = self.predict(assembled_input, scale_input_tensor)
+            new_output, new_output_s = self.predict(assembled_input, scale_input_tensor)
 
             try:
-                assembled_output = tf.concat([assembled_output, new_output], axis=1)
+                assembled_output = tf.concat([assembled_output, new_output_s], axis=1)
             except:
-                assembled_output = new_output
+                assembled_output = new_output_s
 
             # add the output to the new input, drop first of input in case it input should be kept constant length
-
             assembled_input = tf.concat([assembled_input, new_output], axis=1)
 
             # drop the n first rows if input has to stay same length
-            out_len = len(new_output)
-            assembled_input = assembled_input[out_len:]
+            out_len = new_output.shape[-2]
+            assembled_input = assembled_input[:, -self.num_in_steps:, :]
 
         return assembled_output
 
+    def predict_repetitively_epi(self, input_tensor, scale_input_tensor, num_repetitions, fixed_len_input, max_subsample_points):
 
-    def LSTM_one_shot_predictor(self, ds_creator_inst):
+
+        return None
+
+    def LSTM_one_shot_predictor(self, ds_creator_inst, lstm_layer_size, dense_layer_size, n_LSTM_layers, n_dense_layers):
+        model_array = []
+        model_array.append(InputLayer(input_shape=(ds_creator_inst.num_in_steps, ds_creator_inst.num_in_features)))
+        model_array.append(LSTM(lstm_layer_size, return_sequences=True))
+        
+        for i in range(n_LSTM_layers - 1):
+            model_array.append(LSTM(lstm_layer_size, return_sequences=False))
+
+        for i in range(n_dense_layers):
+            model_array.append(Dense(dense_layer_size))
+        
+        model_array.append(Dense(ds_creator_inst.num_out_steps*ds_creator_inst.num_out_features,
+                                    kernel_initializer=tf.initializers.random_uniform))
+        model_array.append(Reshape([ds_creator_inst.num_out_steps, ds_creator_inst.num_out_features]))
+
+        model = tf.keras.Sequential(
+            model_array
+        )
+
+        self.model = model
+
+        # copy the scaler
+        self.scaler = ds_creator_inst.normer
+
+        # set some helper vars
+        self.num_in_features = ds_creator_inst.num_in_features
+        self.num_out_features = ds_creator_inst.num_out_features
+
+        self.num_in_steps = ds_creator_inst.num_in_steps
+        self.num_out_steps = ds_creator_inst.num_out_steps
+
+        return None
+    '''
+    def LSTM_one_shot_predictor(self, ds_creator_inst, lstm_layer_size, dense_layer_size):
 
         lstm_model = tf.keras.Sequential([
             tf.keras.layers.InputLayer(input_shape=(ds_creator_inst.num_in_steps, ds_creator_inst.num_in_features)),
             # Shape [batch, time, features] => [batch, lstm_units]
             # Adding more `lstm_units` just overfits more quickly.
-            tf.keras.layers.LSTM(64, return_sequences=True),
-            tf.keras.layers.LSTM(64, return_sequences=False),
+
+            tf.keras.layers.LSTM(lstm_layer_size, return_sequences=True),
+            tf.keras.layers.LSTM(lstm_layer_size, return_sequences=False),
             # Shape => [batch, out_steps*features]
-            tf.keras.layers.Dense(112),
+            tf.keras.layers.Dense(dense_layer_size),
             tf.keras.layers.Dense(ds_creator_inst.num_out_steps*ds_creator_inst.num_out_features,
                                 kernel_initializer=tf.initializers.random_uniform),
             # Shape => [batch, out_steps, features]
@@ -100,6 +178,50 @@ class DLTrainer:
 
         # copy the scaler
         self.scaler = ds_creator_inst.normer
+
+        # set some helper vars
+        self.num_in_features = ds_creator_inst.num_in_features
+        self.num_out_features = ds_creator_inst.num_out_features
+
+        self.num_in_steps = ds_creator_inst.num_in_steps
+        self.num_out_steps = ds_creator_inst.num_out_steps
+
+        return None
+    '''
+    def __PermaDropout(self, rate):
+        return Lambda(lambda x: K.dropout(x, level=rate))
+
+    def LSTM_one_shot_predictor_epi(self, ds_creator_inst, dropout_rate, lstm_layer_size, dense_layer_size, n_LSTM_layers, n_dense_layers):
+        model_array = []
+        model_array.append(InputLayer(input_shape=(ds_creator_inst.num_in_steps, ds_creator_inst.num_in_features)))
+        model_array.append(LSTM(lstm_layer_size, return_sequences=True))
+        
+        for i in range(n_LSTM_layers - 1):
+            model_array.append(LSTM(lstm_layer_size, return_sequences=False))
+
+        for i in range(n_dense_layers):
+            model_array.append(Dense(dense_layer_size))
+            model_array.append(self.__PermaDropout(dropout_rate))
+        
+        model_array.append(Dense(ds_creator_inst.num_out_steps*ds_creator_inst.num_out_features,
+                                    kernel_initializer=tf.initializers.random_uniform))
+        model_array.append(Reshape([ds_creator_inst.num_out_steps, ds_creator_inst.num_out_features]))
+
+        model = tf.keras.Sequential(
+            model_array
+        )
+
+        self.model = model
+
+        # copy the scaler
+        self.scaler = ds_creator_inst.normer
+
+        # set some helper vars
+        self.num_in_features = ds_creator_inst.num_in_features
+        self.num_out_features = ds_creator_inst.num_out_features
+
+        self.num_in_steps = ds_creator_inst.num_in_steps
+        self.num_out_steps = ds_creator_inst.num_out_steps
 
         return None
 
