@@ -3,6 +3,7 @@ import warnings
 from math import floor, ceil, sqrt
 import matplotlib.pyplot as plt 
 import networkx as nx
+from tensorflow.python.types.core import Value
 
 # TODO: Add observers in order to only do the necessary recalculations https://stackoverflow.com/questions/6190468/how-to-trigger-function-on-value-change
 
@@ -19,7 +20,7 @@ class Graph():
         all_point_names = self.waypoint_names + self.destination_names
         assert len(set(all_point_names)) == len(all_point_names)
 
-        for point in self.waypoint_vals + self.destination_vals:
+        for point in self.waypoint_vals + self.destination_locations:
             assert np.array(point).shape == (2,)
         
         # initiate the transition matrices
@@ -132,10 +133,10 @@ class Graph():
         self.trans_mat_normed = trans_mat_normed
  
 
-    def calculate_destination_probs(self, path):
+    def calculate_destination_probs(self, path, dests_or_points = "destinations"):
         ''' 
         Calculate the probability of the current path being one towards each of the destinations.
-        Expansion on __calculate_destination_probs_back in order to also get estimates if only one point is known
+        Wrapper for __calculate_destination_probs_back in order to also get estimates if only one point is known
         '''
         # Basic check
         assert len(path) > 0
@@ -159,7 +160,7 @@ class Graph():
 
             for connected_id, connected_trans_val in zip(connected_ids, connected_trans_vals):
                 connected_point_name = self.indices_points_dict[connected_id]
-                prob_dict_c = self.__calculate_destination_probs_back([path[0], connected_point_name])
+                prob_dict_c = self.__calculate_destination_probs_back([path[0], connected_point_name], dests_or_points)
 
                 for dest in prob_dict_c.keys():
                     try:
@@ -169,29 +170,44 @@ class Graph():
 
         else:
             # multiple observations are available
-            prob_dict = self.__calculate_destination_probs_back(path)
+            prob_dict = self.__calculate_destination_probs_back(path, dests_or_points)
 
         # replace nan values by zeros
         no_nan_vals = np.nan_to_num(list(prob_dict.values()))
 
         return dict(zip(prob_dict.keys(),no_nan_vals))
     
-    def __calculate_destination_probs_back(self, path):
+    def __calculate_destination_probs_back(self, path, dests_or_points):
+        '''
+        Calculate prob of path to all destinations, 
+        '''
+        # Sanity check
+        dop_allowed = ["destinations", "points"]
+        if not dests_or_points in dop_allowed:
+            raise Value("dests_or_points choice should be one of %s" % (dop_allowed))
+
+        # Set whether calculating chance to destination points or to all waypoints in the network
+        target_names = None
+        if dests_or_points == "destinations":
+            target_names = self.destination_names
+        else:
+            target_names = self.points_names
+
         start_node = path[0]
         end_node = path[-1]
         # prob from start to end of path
         path_prob = self.calculate_path_prob(path)
         # prob from end to every destination
-        end_to_dest_prob = dict()
-        for dest in self.destination_names:
+        end_to_dest_prob = dict()        
+        for dest in target_names:
             end_to_dest_prob[dest] = self.calculate_prob(end_node, dest)
         # prob from start of path to every destination
         start_to_dest_prob = dict()
-        for dest in self.destination_names:
+        for dest in target_names:
             start_to_dest_prob[dest] = self.calculate_prob(start_node, dest)
         # full prob
         full_prob = dict()
-        for dest in self.destination_names:
+        for dest in target_names:
             full_prob[dest] = path_prob * end_to_dest_prob[dest] / start_to_dest_prob[dest]
         
         print('Path prob:')
@@ -591,7 +607,7 @@ class Graph():
         return list(self.wayp_dict.values())
 
     @property 
-    def destination_vals(self):
+    def destination_locations(self):
         return list(self.dest_dict.values())
 
     @property 

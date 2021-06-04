@@ -104,21 +104,28 @@ def main():
     # displaying the probabilities of the destinations 
     dest_probs_dict = g.calculate_destination_probs(n)
     dest_probs_l = list(dest_probs_dict.values())
-    dest_locs_dict_l = g.destination_vals    
+    dest_locs_dict_l = g.destination_locations    
     scene_data.plot_dest_probs(dest_locs_dict_l, dest_probs_l, 3, 200, ax1, 'data/images/dest_pred/dest_pred.png')
     
+    # displaying the probabilities of all the waypoints and destinations 
+    dest_probs_dict = g.calculate_destination_probs(n, "points")
+    dest_probs_l = list(dest_probs_dict.values())
+    dest_locs_dict_l = g.points_locations    
+    scene_data.plot_dest_probs(dest_locs_dict_l, dest_probs_l, 3, 200, ax1, 'data/images/dest_pred/points_pred.png')
+    
+
     # let's have a look what the probabilitites look like when we walk across the street
     n2 = ['w9', 'wa', 'w3', 'w6']
     dest_probs_dict = g.calculate_destination_probs(n2)
     dest_probs_l = list(dest_probs_dict.values())
-    dest_locs_dict_l = g.destination_vals    
+    dest_locs_dict_l = g.destination_locations    
     scene_data.plot_dest_probs(dest_locs_dict_l, dest_probs_l, 3, 200, ax2, 'data/images/dest_pred/dest_pred2.png')
     
     # and cross again!
     n3 = ['w9', 'wa', 'w3', 'w6', 'wb']
     dest_probs_dict = g.calculate_destination_probs(n3)
     dest_probs_l = list(dest_probs_dict.values())
-    dest_locs_dict_l = g.destination_vals    
+    dest_locs_dict_l = g.destination_locations    
     scene_data.plot_dest_probs(dest_locs_dict_l, dest_probs_l, 3, 200, ax1, 'data/images/dest_pred/dest_pred3.png')
     
     print(g.num_dest_arrivers_dict)
