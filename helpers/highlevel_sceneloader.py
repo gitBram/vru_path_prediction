@@ -133,8 +133,19 @@ class HighLevelSceneLoader():
       self.dataset_name = 'sdd'
       self.scene_name = str(scene_name) + str(scene_video_id)
 
-  def plot_on_image(self, lst_realxy_mats, ms = 3, invert_y = False, save_path = None, ax=None, col_num_dicts = None):
+  def plot_on_image(self, lst_realxy_mats, ms = 3, invert_y = False, save_path = None, ax=None, col_num_dicts=dict(zip(["x", "y"], [0, 1]))):
     ''' Plot a list of xy matrices on top of an image '''
+    # Check input types
+    if type(col_num_dicts)!= list:
+      col_num_dicts = [col_num_dicts]
+
+    # try to expand the dicts list to correct shape by copying it
+    if len(col_num_dicts) == 1 and len(lst_realxy_mats) > 1:
+      col_num_dicts = col_num_dicts * len(lst_realxy_mats)
+    
+    # Sanity check
+    if len(lst_realxy_mats) != len(col_num_dicts):
+      raise ValueError("Number of xy matrices and dictionaries should be equal.")
 
     # Set up axis 
     if ax is None:
@@ -253,16 +264,16 @@ class HighLevelSceneLoader():
       out_xy.append(df[df[self.df_split_col]==split_id][[self.df_x_col, self.df_y_col]].to_numpy())
     return out_xy        
 
-  def plot_all_trajs_on_img(self, save_path):
+  def plot_all_trajs_on_img(self, save_path, col_num_dicts=dict(zip(["x", "y"], [0, 1]))):
     ''' Plot all the trajectories on the background image '''
     l = self.df_to_lst_realxy_mats()
-    ax = self.plot_on_image(l, save_path=save_path, invert_y=False)
+    ax = self.plot_on_image(l, save_path=save_path, invert_y=False, col_num_dicts=col_num_dicts)
     return ax
 
-  def plot_dests_on_img(self, save_path):
+  def plot_dests_on_img(self, save_path, col_num_dicts=dict(zip(["x", "y"], [0, 1]))):
     ''' Plot the retrieved destinations on the background image ''' 
     d = self.destination_matrix
-    ax = self.plot_on_image([d], save_path=save_path, invert_y=False)
+    ax = self.plot_on_image([d], save_path=save_path, invert_y=False, col_num_dicts=col_num_dicts)
     return ax
 
   @property
@@ -324,7 +335,7 @@ class HighLevelSceneLoader():
     
     return locs_mat
 
-
+"""
 def plot_on_image(image, real_boundaries, lst_realxy_mats, ms = 3, invert_y = False, ax = None):
   ''' Plot a list of xy matrices on top of an image '''
   if ax is None:
@@ -343,6 +354,7 @@ def plot_on_image(image, real_boundaries, lst_realxy_mats, ms = 3, invert_y = Fa
 
   plt.savefig('hello.png')
   return ax
+  """
 
 def __test():
 

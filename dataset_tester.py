@@ -24,7 +24,7 @@ def main():
     tf.executing_eagerly()
     my_ds = TFDataSet.init_as_fixed_length(scene_data.traj_dataframe, scale_list=["pos_y"], seq_in_length=5, label_length=1, seq_stride=1)
 
-    print(my_ds.example("train", False))    
+    print(my_ds.example_dict("train", "in_xy"))    
 
     return None
 

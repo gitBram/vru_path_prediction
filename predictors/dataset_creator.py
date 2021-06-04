@@ -103,8 +103,8 @@ class TFDataSet():
 
             df_train = normer.scale_dataframe(df_train, scale_list, "normalize")
             df_val = normer.scale_dataframe(df_val, scale_list, "normalize")
-            df_test = normer.scale_dataframe(df_test, scale_list, "normalize")        
-        
+            df_test = normer.scale_dataframe(df_test, scale_list, "normalize")   
+                       
         # Set everything up for adding noise
         noise_std_vector = None
         if normalize_data:
@@ -135,6 +135,9 @@ class TFDataSet():
             path_df = path_df.drop(columns = id_col_name)
             path_np = path_df.to_numpy()
 
+            # Calculate destinations probabilities
+            dest_prob = np.array([0., 0., .0, float(i)])
+
             if not (seq_in_length is None or seq_stride is None):
                 def windower(a, window_size):
                     n = a.shape[0]
@@ -149,14 +152,17 @@ class TFDataSet():
                 # if no windows were returned --> skip to next path
                 if path_np.size == 0:
                     continue                
-
-            path_ds = tf.data.Dataset.from_tensors(path_np)
+            ds_dict = dict()
+            ds_dict["xy"]=path_np
+            ds_dict["probs"]=np.tile(dest_prob, (len(path_np), 1))
+            path_ds = tf.data.Dataset.from_tensors(ds_dict)
             
             # Add noise if wanted
             if noise_std_vector is not None:
                 def add_noise(x):                
-                    noise = tf.random.normal(shape=x.shape, mean=0., stddev=noise_std_vector, dtype=x.dtype)
-                    return x + noise
+                    noise = tf.random.normal(shape=x["xy"].shape, mean=0., stddev=noise_std_vector, dtype=x["xy"].dtype)
+                    x["xy"] = x["xy"] + noise
+                    return x
                 path_ds = path_ds.map(add_noise)
             
             try:
@@ -169,7 +175,13 @@ class TFDataSet():
         # Let's remove the first dimension (*random*,timesteps, feature_num) to (timesteps, feature_num)
         ds = ds.flat_map(lambda x: tf.data.Dataset.from_tensor_slices(x))        
         
-        ds = ds.map(lambda window: (tf.transpose(tf.gather(tf.transpose(window[:-lbl_length]),in_col_nums)), tf.transpose(tf.gather(tf.transpose(window[-lbl_length:]),out_col_nums))))
+        def extract_columns(d):           
+            d["in_xy"]= tf.transpose(tf.gather(tf.transpose(d["xy"][:-lbl_length]),in_col_nums))
+            out = tf.transpose(tf.gather(tf.transpose(d["xy"][-lbl_length:]),out_col_nums))
+            del d["xy"]
+            return d, out
+        ds = ds.map(lambda d: extract_columns(d))
+
 
         if shuffle == True: 
             ds = ds.shuffle(buffer_size=shuffle_buffer_size) 
@@ -181,15 +193,20 @@ class TFDataSet():
             
 
         # this function does nothing for now
+        '''
         def pad_or_trunc(t,k):
             return t,k
 
         ds = ds.map(pad_or_trunc)
+        '''
 
         return ds.repeat(n_repeats)
 
     def example(self, ds_type):
-        ''' Return an example batch from train/test/val dataset, denorm if wanted (and only if denorm available ofc) '''
+        ''' 
+        Return an example batch from train/test/val dataset, denorm if wanted (and only if denorm available ofc) 
+        Only if in and output are both xy tensors, no extra information may be included
+        '''
         # Quick sanity check
         if not ds_type in list(self.tf_ds_dict.keys()):
             raise ValueError("Key %s not in dataset dict"%(ds_type))        
@@ -198,6 +215,26 @@ class TFDataSet():
         if self.normer is not None:
             # If there has been scaling, return both unscaled and scaled version
             input_denormed = self.normer.scale_tensor(input, "denormalize", "in")
+            output_denormed = self.normer.scale_tensor(output, "denormalize", "out")
+
+            return (input, output), (input_denormed, output_denormed)
+        else: 
+            # If there has not been any scaling, 
+            return (input, output), (input, output)
+
+    def example_dict(self, ds_type, xy_key):
+        '''
+        Like example function, but if input is specified as a dict
+        '''
+        # Quick sanity check
+        if not ds_type in list(self.tf_ds_dict.keys()):
+            raise ValueError("Key %s not in dataset dict"%(ds_type))        
+        
+        input, output = next(iter(self.tf_ds_dict[ds_type]))
+        if self.normer is not None:
+            # If there has been scaling, return both unscaled and scaled version
+            input_denormed = dict(input)
+            input_denormed[xy_key] = self.normer.scale_tensor(input[xy_key], "denormalize", "in")
             output_denormed = self.normer.scale_tensor(output, "denormalize", "out")
 
             return (input, output), (input_denormed, output_denormed)

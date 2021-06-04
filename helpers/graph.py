@@ -170,7 +170,11 @@ class Graph():
         else:
             # multiple observations are available
             prob_dict = self.__calculate_destination_probs_back(path)
-        return prob_dict
+
+        # replace nan values by zeros
+        no_nan_vals = np.nan_to_num(list(prob_dict.values()))
+
+        return dict(zip(prob_dict.keys(),no_nan_vals))
     
     def __calculate_destination_probs_back(self, path):
         start_node = path[0]
@@ -450,7 +454,7 @@ class Graph():
         self.trans_mat[i_from, i_to] += 1
 
 
-    def __find_closest_waypoint(self, measurement):
+    def find_closest_point(self, measurement):
         ''' get the closest waypoint to a measurement ''' 
         measurement = np.array(measurement)
         assert measurement.size == 2
@@ -464,10 +468,10 @@ class Graph():
 
         return waypoint, distance[0]
 
-    def measurement_to_waypoint(self, measurement):
+    def measurement_to_point(self, measurement):
         ''' Check closest waypoint that is within threshold, return None if no waypoint '''
         
-        w, d = self.__find_closest_waypoint(measurement)
+        w, d = self.find_closest_point(measurement)
 
         if d <= self._threshold:
             return w
@@ -486,9 +490,77 @@ class Graph():
 
     def __calculate_node_distances(self, node_list_1, node_list_2):
         ''' calculate distances '''
-        return np.sqrt((node_list_1**2).sum(axis=1)[:, None] - 2 * node_list_1.dot(node_list_2.transpose()) + ((node_list_2**2).sum(axis=1)[None, :]))
+        return np.sqrt((node_list_1**2).sum(axis=1)[:, None] - 2 * node_list_1.dot(node_list_2.transpose()) + ((node_list_2**2).sum(axis=1)[None, :]))    
 
-    
+
+    def return_connected_points(self, measurement):
+        '''
+        return a location tensor and probability tensor for the connected points to a certain waypoint
+        '''
+        self.recalculate_trans_mat_dependencies()
+        current_waypoint, _ = self.find_closest_point(measurement)
+        wp_index = self.points_indices_dict[current_waypoint]
+        
+        connection_strengths = self.trans_mat_normed[wp_index]
+        connected_ids = np.where(connection_strengths>self.std_graph_prune_threshold)
+        connected_ids = connected_ids[0]
+        probabilities = connection_strengths[connection_strengths>self.std_graph_prune_threshold]
+        locations = []
+        for id in connected_ids:
+            locations.append(self.points_locations[id])
+
+        return np.array(locations), probabilities
+
+    def return_n_most_likely_next_points(self, measurement, n):
+        locs, probs = self.return_connected_points(measurement)
+
+        return self.__return_n_most_likely_points(locs, probs, n)
+
+    def return_n_most_likely_dests(self, n, path):
+        # return dict with probs for each destination 
+        dest_probs = self.calculate_destination_probs(path)
+        locs = [self.points_dict[x] for x in list(dest_probs.keys())]
+        probs = [x for x in list(dest_probs.values())]
+        
+        return self.__return_n_most_likely_points(locs, probs, n)
+
+    def __return_n_most_likely_points(self, locs, probs, n):
+        ''' 
+        General function that returns first n points with the highest probability.
+        If not enough points available, filling with zeros to keep output shape.
+        '''
+        # Sanity check
+        if len(locs) != len(probs):
+            raise ValueError("Number of location values should equal number of probabilities.")
+        # Type check
+        locs = np.array(locs)
+        probs = np.array(probs)
+
+        # sort locs and probs according to probs
+        order = np.flip(np.argsort(probs))
+        locs = locs[order]
+        probs = probs[order]
+
+        # extract the last n points from the ordered list
+        num_points_avail = len(locs)
+
+        locs = locs[:min(num_points_avail, n)]
+        probs = probs[:min(num_points_avail, n)]
+        
+        # if not enough connected points, add zeros
+        if num_points_avail < n:    
+            diff = n - num_points_avail   
+            zero_locs = np.tile(np.zeros((1,2)),(diff,1))
+            zero_probs = np.squeeze(np.tile(np.array([0.]),(1, diff)))
+
+            # for avoiding difficulty in concat
+            zero_probs = zero_probs.reshape(1, zero_probs.size)
+            probs = probs.reshape(1, probs.size)
+
+            locs = np.concatenate([locs, zero_locs], axis=0)
+            probs = np.concatenate([probs, zero_probs], axis=-1)
+
+        return locs, probs
 
     def subsample_graph(self, resolution):
         #TODO

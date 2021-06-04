@@ -26,14 +26,17 @@ def main():
     ''' time to create df datasets '''
     tf.executing_eagerly()
     my_ds = TFDataSet.init_as_fixed_length(scene_data.traj_dataframe, scale_list=["pos_x", "pos_y"], 
-    seq_in_length=6, label_length=1, seq_stride=1, noise_std = .3, n_repeats=5)
+    seq_in_length=3, label_length=5, seq_stride=1, noise_std = .3, n_repeats=5)
 
-    print(my_ds.example("train"))
+    # print(my_ds.example("train"))
+    my_ds_dict = TFDataSet.init_as_fixed_length(scene_data.traj_dataframe, scale_list=["pos_x", "pos_y"], 
+    seq_in_length=3, label_length=5, seq_stride=1, noise_std = .3, n_repeats=5)
+
 
 
     ''' time for some model training '''
     # BASIC TRAINER
-    my_trainer = DLTrainer(max_epochs=60, patience=10)
+    my_trainer = DLTrainer(max_epochs=2, patience=10)
     my_trainer.LSTM_one_shot_predictor(my_ds, 64, 128, 2, 2)
 
     save_path = "data/model_weights/example_predictor.h5"
@@ -43,7 +46,7 @@ def main():
         my_trainer.compile_and_fit(my_ds, save_path)
 
     # EPISTEMIC TRAINER
-    my_trainer_epi = DLTrainer(max_epochs=60, patience=10)
+    my_trainer_epi = DLTrainer(max_epochs=2, patience=10)
     my_trainer_epi.LSTM_one_shot_predictor_epi(my_ds, .2, 64, 128, 2, 2)
     save_path = "data/model_weights/example_predictor_ale.h5"
     try:
@@ -52,9 +55,24 @@ def main():
         my_trainer_epi.compile_and_fit(my_ds, save_path)
 
     ''' time for some model predictions '''
-    nxt_unsc, nxt_sc = my_ds.example("test")
-    unscaled_ex = nxt_unsc[0][0]
-    scaled_ex = nxt_sc[0][0]
+    nxt_unsc, nxt_sc = my_ds.example_dict("test", "in_xy")
+
+    # Let's extract just one path to make visualisation clearer
+    unscaled_ex = dict(nxt_unsc[0]), nxt_unsc[1]
+    scaled_ex = dict(nxt_sc[0]), nxt_sc[1]
+    unscaled_ex[0]["in_xy"] = nxt_unsc[0]["in_xy"][0]
+    scaled_ex[0]["in_xy"] = nxt_sc[0]["in_xy"][0]
+
+    # BASIC TRAINER
+    my_trainer = DLTrainer(max_epochs=2, patience=10)
+    my_trainer.LSTM_one_shot_predictor_named_i(my_ds_dict, 64, 128, 2, 2)
+
+    save_path = "data/model_weights/example_predictor_named.h5"
+    try:
+        my_trainer.load_weights(save_path)
+    except:
+        my_trainer.compile_and_fit(my_ds_dict, save_path)
+    print(my_trainer.model.summary())
 
     # Basic prediction
     _, output = my_trainer.predict(unscaled_ex, scale_input_tensor = False)
@@ -70,7 +88,7 @@ def main():
 
     # create dicts for correctly displaying data    
     scene_data.plot_on_image([scaled_ex, output], 
-    save_path='data/images/predictions/example_prediction.png', ms = [6, 6], ax=ax1,
+    save_path='data/images/predictions/example_prediction.png', ms = [6, 1], ax=ax1,
     col_num_dicts=[my_ds.generalised_in_dict, my_ds.generalised_out_dict])
 
     # LOT BASIC PREDICTION REPEATED
@@ -78,7 +96,7 @@ def main():
 
     # create dicts for correctly displaying data    
     scene_data.plot_on_image([scaled_ex, output_r], 
-    save_path='data/images/predictions/example_prediction_r.png', ms = [6, 6], ax=ax2,
+    save_path='data/images/predictions/example_prediction_r.png', ms = [6, 1], ax=ax2,
     col_num_dicts=[my_ds.generalised_in_dict, my_ds.generalised_out_dict])
 
     # PLOT EPISTEMIC 

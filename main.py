@@ -56,12 +56,12 @@ def main():
     #     [55,31],
 
     # ])
-    scene_data.plot_on_image([interest_points], save_path='data/images/data_vis/waypoints.png')
-    scene_data.plot_dests_on_img('data/images/data_vis/destinations.png')
+    scene_data.plot_on_image([interest_points], save_path='data/images/data_vis/waypoints.png', col_num_dicts=dict(zip(["x", "y"], [0, 1])))
+    scene_data.plot_dests_on_img('data/images/data_vis/destinations.png', col_num_dicts=dict(zip(["x", "y"], [0, 1])))
 
     ''' Fit a graph to the found points '''
     print(scene_data.destination_matrix)
-    g = Graph.from_matrices(interest_points, scene_data.destination_matrix, 4, .2)
+    g = Graph.from_matrices(interest_points, scene_data.destination_matrix, 4, .05)
 
     df_signals = scene_data.df_to_lst_realxy_mats()
     g.analyse_multiple_full_signals(df_signals, add_to_trams_mat=True)
@@ -123,7 +123,6 @@ def main():
     
     print(g.num_dest_arrivers_dict)
 
-    lala = g.points_indices_dict
     s_ind = g.points_indices_dict['d7']
     d_ind = g.points_indices_dict['d6']
     for i in range(1, len(g.trans_mats_dict.keys())):
@@ -131,6 +130,8 @@ def main():
         print('Num of steps: {:.0f}, Prob: {:.4f}'.format(i, tm[s_ind, d_ind]))
         print(tm[s_ind, d_ind])
 
+    print(g.return_n_most_likely_dests(31, n))
+    print(g.return_n_most_likely_next_points([45,-32], 3))
 
 def __return_waypoints_ind():
     d = np.array([
