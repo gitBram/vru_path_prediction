@@ -17,14 +17,18 @@ def main():
     root_datasets = os.path.join(ROOT, 'data/path_data')
     sys.path.append(opentraj_root) # add package to pythonpath
 
-    scene_data = HighLevelSceneLoader(p_img_bounds, p_dest_locs)
-    scene_data.load_ind(root_datasets, 11)
+    for i in range(1):
+        scene_data = HighLevelSceneLoader(p_img_bounds, p_dest_locs)
+        scene_data.load_ind(root_datasets, 11)
 
-    ''' time to create df datasets '''
-    tf.executing_eagerly()
-    my_ds = TFDataSet.init_as_fixed_length(scene_data.traj_dataframe, scale_list=["pos_y"], seq_in_length=5, label_length=1, seq_stride=1)
+        ''' time to create df datasets '''
+        tf.executing_eagerly()
 
-    print(my_ds.example_dict("train", "in_xy"))    
+        my_ds = TFDataSet.init_as_fixed_length(scene_data.traj_dataframe, scale_list=["pos_x"], normalize_data=True, seq_in_length=5, label_length=1, seq_stride=1)
+
+        print(my_ds.in_dict)
+        print(my_ds.out_dict)
+        print(my_ds.example_dict("train", "in_xy"))    
 
     return None
 

@@ -6,6 +6,7 @@ This class calculates a data normalizer based on a certain set of training data.
 import pandas as pd
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.ops.gen_array_ops import expand_dims
 
 class DataDeNormalizer():
     def __init__(self, data_dict, in_dict, out_dict):
@@ -59,11 +60,36 @@ class DataDeNormalizer():
                 df_c[col_name] = (df_c[col_name] * scaler_vals["std"]) + scaler_vals["mu"]
         return df_c
 
+    def scale_dict_f(self, data_dict, action):
+        data_dict_c = dict(data_dict)
+        xy_key = "in_xy"
+        data_dict_c[xy_key] = self.scale_tensor(data_dict_c[xy_key], "denormalize", "in")
+        if "all_points" in data_dict_c:
+            locations = data_dict_c["all_points"][:, :, 0:2]
+            locations = self.scale_tensor(locations, "denormalize", "in", dict(zip(["pos_x", "pos_y"],[0,1])))
+            probs = tf.expand_dims(data_dict_c["all_points"][:,:,2],axis=-1)
+            data_dict_c["all_points"] = tf.concat(
+                [locations, probs], 
+                axis=-1)
+        if "all_destinations" in data_dict_c:
+            locations = data_dict_c["all_destinations"][:, :, 0:2]
+            locations = self.scale_tensor(locations, "denormalize", "in", dict(zip(["pos_x", "pos_y"],[0,1])))
+            probs = tf.expand_dims(data_dict_c["all_destinations"][:,:,2],axis=-1)
+            data_dict_c["all_destinations"] = tf.concat(
+                [locations, probs], 
+                axis=-1)
 
-    def scale_tensor(self, data, action, in_out):
+        return data_dict_c
+
+
+    def scale_tensor(self, data, action, in_out, custom_scale_dict = None):
         ''' 
         (De)Normalize a matrix of TF data. Ordered col list is used to retrieve the 
+        Custom scaling can be done by providing the custom scale dict.
         '''
+        # Sanity check
+        if data.ndim > 3:
+            raise ValueError("Data input in scale_tensor has %d dimensions, should have 3."%(data.ndim))
         # Assert that action is either "normalize" or "denormalize"
         allowed_actions = ["normalize", "denormalize"]
         if action not in allowed_actions:
@@ -79,7 +105,10 @@ class DataDeNormalizer():
 
         # Get a list in correct order of mu's and std's to efficiently (de)normalize using TF
         my_inout_dict = None
-        my_inout_dict = self.in_dict if in_out == "in" else self.out_dict
+        if custom_scale_dict is None:
+            my_inout_dict = self.in_dict if in_out == "in" else self.out_dict
+        else:
+            my_inout_dict = custom_scale_dict
 
         mu_list = [None] * len(my_inout_dict)
         std_list = [None] * len(my_inout_dict)
@@ -93,8 +122,11 @@ class DataDeNormalizer():
             std_list = [x if x is not None else 1. for x in std_list]
 
         # Reshape the data to easily apply data across batch dimension
-        o_shape = data.shape
-        normed_data = tf.reshape(data, (o_shape[0]*o_shape[1], o_shape[2]))
+        if data.ndim == 3:
+            o_shape = data.shape
+            normed_data = tf.reshape(data, (o_shape[0]*o_shape[1], o_shape[2]))
+        else:
+            normed_data = data
         # Create tf tensors from the premade lists
         mu_tensor = tf.constant(mu_list, dtype=in_dtype)
         std_tensor = tf.constant(std_list, dtype=in_dtype)
@@ -106,7 +138,8 @@ class DataDeNormalizer():
             normed_data = tf.map_fn(lambda line: tf.math.multiply(line,std_tensor), normed_data)
             normed_data = tf.map_fn(lambda line: tf.math.add(line,mu_tensor), normed_data)
         # back to original shape with batch dimension
-        normed_data = tf.reshape(normed_data, o_shape)
+        if data.ndim == 3:
+            normed_data = tf.reshape(normed_data, o_shape)
 
         return normed_data
     

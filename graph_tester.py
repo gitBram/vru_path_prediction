@@ -7,6 +7,7 @@ from helpers.waypoint_analyser import WaypointAnalyser
 from helpers.highlevel_sceneloader import HighLevelSceneLoader
 from helpers.graph import Graph
 
+
 def main():
     ''' get the data '''
     ROOT = os.getcwd()

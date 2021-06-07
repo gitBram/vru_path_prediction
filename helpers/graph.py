@@ -151,9 +151,13 @@ class Graph():
 
             # get all the points that this point is connected to according to graph
             connected_ids = np.where(self.trans_mat_normed[start_id,:]>0.)
+            print(connected_ids)
             connected_trans_vals = self.trans_mat_normed[start_id, connected_ids]
 
             connected_ids = np.squeeze(connected_ids)
+            # workaround if zero dimensions remain
+            if connected_ids.ndim == 0:
+                connected_ids = np.array([connected_ids.tolist()])
             connected_trans_vals = np.squeeze(connected_trans_vals)
             # get the average over all these connected components
             prob_dict = dict()
@@ -210,14 +214,14 @@ class Graph():
         for dest in target_names:
             full_prob[dest] = path_prob * end_to_dest_prob[dest] / start_to_dest_prob[dest]
         
-        print('Path prob:')
-        print(path_prob)
-        print('Path end to Dest prob:')
-        print(end_to_dest_prob)
-        print('Path start to Dest prob:')
-        print(start_to_dest_prob)
-        print('Full calculated probs:')
-        print(full_prob)
+        # print('Path prob:')
+        # print(path_prob)
+        # print('Path end to Dest prob:')
+        # print(end_to_dest_prob)
+        # print('Path start to Dest prob:')
+        # print(start_to_dest_prob)
+        # print('Full calculated probs:')
+        # print(full_prob)
         return full_prob
 
     def calculate_path_prob(self, path):
@@ -512,6 +516,7 @@ class Graph():
     def return_connected_points(self, measurement):
         '''
         return a location tensor and probability tensor for the connected points to a certain waypoint
+        No filtering based on distance
         '''
         self.recalculate_trans_mat_dependencies()
         current_waypoint, _ = self.find_closest_point(measurement)
@@ -528,17 +533,22 @@ class Graph():
         return np.array(locations), probabilities
 
     def return_n_most_likely_next_points(self, measurement, n):
+        '''
+        No maximum distance limit to find the closest point, 
+        n connected points to closest points returned sorted by transition probability
+        '''
         locs, probs = self.return_connected_points(measurement)
 
         return self.__return_n_most_likely_points(locs, probs, n)
 
-    def return_n_most_likely_dests(self, n, path):
+    def return_n_most_likely_points(self, n, nodes, points_or_dests = "destinations"):
         # return dict with probs for each destination 
-        dest_probs = self.calculate_destination_probs(path)
+        dest_probs = self.calculate_destination_probs(nodes, points_or_dests)
         locs = [self.points_dict[x] for x in list(dest_probs.keys())]
         probs = [x for x in list(dest_probs.values())]
         
         return self.__return_n_most_likely_points(locs, probs, n)
+
 
     def __return_n_most_likely_points(self, locs, probs, n):
         ''' 
@@ -577,15 +587,6 @@ class Graph():
             probs = np.concatenate([probs, zero_probs], axis=-1)
 
         return locs, probs
-
-    def subsample_graph(self, resolution):
-        #TODO
-        ''' 
-        One problem with using only waypoints is that the probabilities do not get updated regularly.
-        We will create points in-between. 
-        '''
-        subsample_mat = None
-        return subsample_mat
 
     @property  
     def threshold(self):
