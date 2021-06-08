@@ -158,7 +158,11 @@ class Graph():
             # workaround if zero dimensions remain
             if connected_ids.ndim == 0:
                 connected_ids = np.array([connected_ids.tolist()])
+
             connected_trans_vals = np.squeeze(connected_trans_vals)
+            # workaround if zero dimensions remain
+            if connected_trans_vals.ndim == 0:
+                connected_trans_vals = np.array([connected_trans_vals.tolist()])
             # get the average over all these connected components
             prob_dict = dict()
 
@@ -173,6 +177,7 @@ class Graph():
                         prob_dict[dest] = prob_dict_c[dest] * connected_trans_val
 
         else:
+            print("multival prediction")
             # multiple observations are available
             prob_dict = self.__calculate_destination_probs_back(path, dests_or_points)
 

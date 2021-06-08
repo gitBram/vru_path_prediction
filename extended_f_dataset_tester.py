@@ -3,6 +3,7 @@ import sys, os, yaml
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import pickle
 
 from helpers.waypoint_analyser import WaypointAnalyser
 from helpers.highlevel_sceneloader import HighLevelSceneLoader
@@ -48,16 +49,26 @@ def main():
     g.visualize_graph(my_graph, 'data/images/graphs/graph_with_image.png', scene_loader = scene_data)
 
     ''' test of displaying a path and its triggered waypoints '''
+    extra_features_dict = {
+        "all_points": None,
+        "all_destinations": None,
+        "n_destinations": 5,
+        "n_points": 5
+    }
     my_ds = TFDataSet.init_as_fixed_length(scene_data.traj_dataframe.head(200), scale_list=["pos_x", "pos_y"], seq_in_length=5, label_length=1, seq_stride=1,
-    extra_features=["all_points"], graph=g)
+    extra_features_dict=extra_features_dict, graph=g)
+
+    # save the dataset
+    # with open('data/pickle/dataset.pickle', 'wb') as f:
+    #     pickle.dump(my_ds, f)
 
     normed, denormed = my_ds.example_dict("train", "in_xy")
     my_in, my_out = denormed
         # PLOT BASIC PREDICTION
     fig1, ax1 = plt.subplots()
-
-  
-    scene_data.plot_on_image([my_in["in_xy"][0], my_out], 
+    
+    lbls = my_in["labels"][0].to_tensor()
+    scene_data.plot_on_image([my_in["in_xy"][0], lbls], 
     save_path='data/images/extra_f/in_out.png', ms = [6, 1], ax=ax1,
     col_num_dicts=[my_ds.generalised_in_dict, my_ds.generalised_out_dict])
 
@@ -66,6 +77,12 @@ def main():
 
     scene_data.plot_dest_probs(dest_l, dest_p, 3, 200, ax = ax1, save_path = 'data/images/extra_f/destination_probs.png')
     
+    a = np.ones((2,5,2))
+    b = np.ones((5,2))
+    aa = 2*a
+    bb = 2*b
+    print(scene_data.return_accuracy(a, aa))
+    print(scene_data.return_accuracy(b, bb))
 def __return_waypoints_ind():
     d = np.array([
     [ 65, -36],

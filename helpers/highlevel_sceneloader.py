@@ -16,6 +16,8 @@ import os, sys
 import matplotlib.pyplot as plt
 import numpy as np
 from math import floor, ceil
+from scipy.spatial import distance
+import tensorflow as tf
 
 class HighLevelSceneLoader():
   def __init__(self, img_bound_file_loc, dest_file_loc):
@@ -169,7 +171,7 @@ class HighLevelSceneLoader():
     for xy, i, col_num_dict in zip(lst_realxy_mats, range(len(lst_realxy_mats)), col_num_dicts):
    
       # Plot if there is actual data
-      if len(xy) > 0:
+      if np.size(xy) > 0:
         xy_np = np.array(xy)
         my_shape = xy_np.shape
 
@@ -275,6 +277,35 @@ class HighLevelSceneLoader():
     d = self.destination_matrix
     ax = self.plot_on_image([d], save_path=save_path, invert_y=False, col_num_dicts=col_num_dicts)
     return ax
+
+  def return_accuracy(self, arr_1, arr_2, n=None):
+    '''
+    Get a value for accuracy, comparing 2 point arrays.
+    If n is provided, only predictions where label of at least leng
+    '''
+    # get the shape right - we will be working on time dimension
+    if arr_1.ndim == 2:
+      arr_1_c = [arr_1]
+    if arr_2.ndim == 2:
+      arr_2_c = [arr_2]
+    if arr_1.ndim == 3:
+      arr_1_c = tf.unstack(arr_1)
+    if arr_2.ndim == 3:
+      arr_2_c = tf.unstack(arr_2)
+
+    # get the shortest length for each pair
+    distance_list = []
+    number_of_points_included = []
+    for a1, a2 in zip(arr_1_c, arr_2_c):      
+      shortest_len = min(a1.shape[-2], a2.shape[-2])
+      number_of_points_included.append(shortest_len)
+      a1 = a1[shortest_len:, :]
+      a2 = a2[shortest_len:, :]
+
+      summed_dist = np.average(np.diag(distance.cdist(a1, a2, "euclidean")))
+      distance_list.append(summed_dist)
+
+    return distance_list, number_of_points_included
 
   @property
   def df_split_col(self):
