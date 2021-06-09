@@ -134,6 +134,15 @@ class HighLevelSceneLoader():
       self.image_limits = self.img_bound_dict[('sdd', str(scene_name)+str(scene_video_id))]
       self.dataset_name = 'sdd'
       self.scene_name = str(scene_name) + str(scene_video_id)
+  
+  def remove_label_fill_vals(self, input_tensor, fill_val = 0.):
+    '''
+    Since tensorflow did now allow to concat datasets mixing RaggedTensor and Tensor, here we go
+    '''
+    mask = tf.equal(input_tensor, tf.fill([1,2], fill_val))
+
+    return tf.boolean_mask(input_tensor, mask)
+
 
   def plot_on_image(self, lst_realxy_mats, ms = 3, invert_y = False, save_path = None, ax=None, col_num_dicts=dict(zip(["x", "y"], [0, 1]))):
     ''' Plot a list of xy matrices on top of an image '''
@@ -172,7 +181,9 @@ class HighLevelSceneLoader():
    
       # Plot if there is actual data
       if np.size(xy) > 0:
-        xy_np = np.array(xy)
+        # start by removing zeros, if any
+        xy_np = np.array(xy)        
+        # xy_np = np.array(self.remove_label_fill_vals(xy_np))
         my_shape = xy_np.shape
 
         # Check that data is not 1d, can be the case if only one point is fed and matrix is squeezed
@@ -297,10 +308,12 @@ class HighLevelSceneLoader():
     distance_list = []
     number_of_points_included = []
     for a1, a2 in zip(arr_1_c, arr_2_c):      
+      a1 = tf.squeeze(a1)
+      a2 = tf.squeeze(a2)
       shortest_len = min(a1.shape[-2], a2.shape[-2])
       number_of_points_included.append(shortest_len)
-      a1 = a1[shortest_len:, :]
-      a2 = a2[shortest_len:, :]
+      a1 = a1[:shortest_len, :]
+      a2 = a2[:shortest_len, :]
 
       summed_dist = np.average(np.diag(distance.cdist(a1, a2, "euclidean")))
       distance_list.append(summed_dist)

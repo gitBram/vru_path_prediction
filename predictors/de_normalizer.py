@@ -81,15 +81,14 @@ class DataDeNormalizer():
 
         return data_dict_c
 
-
     def scale_tensor(self, data, action, in_out, custom_scale_dict = None):
         ''' 
         (De)Normalize a matrix of TF data. Ordered col list is used to retrieve the 
         Custom scaling can be done by providing the custom scale dict.
         '''
         # Sanity check
-        if data.ndim > 3:
-            raise ValueError("Data input in scale_tensor has %d dimensions, should have 3."%(data.ndim))
+        # if tf.math.greater(tf.size(tf.shape(data)), tf.constant(3)):
+        #     raise ValueError("Data input in scale_tensor has %d dimensions, should have 3."%(tf.size(tf.shape(data)).numpy()))
         # Assert that action is either "normalize" or "denormalize"
         allowed_actions = ["normalize", "denormalize"]
         if action not in allowed_actions:
@@ -122,10 +121,11 @@ class DataDeNormalizer():
             std_list = [x if x is not None else 1. for x in std_list]
 
         # Reshape the data to easily apply data across batch dimension
-        if data.ndim == 3:
+        if tf.math.equal(tf.size(tf.shape(data)), tf.constant(3)):
             o_shape = data.shape
             normed_data = tf.reshape(data, (o_shape[0]*o_shape[1], o_shape[2]))
         else:
+            o_shape = data.shape # necessary for tf graph...
             normed_data = data
         # Create tf tensors from the premade lists
         mu_tensor = tf.constant(mu_list, dtype=in_dtype)
@@ -138,16 +138,16 @@ class DataDeNormalizer():
             normed_data = tf.map_fn(lambda line: tf.math.multiply(line,std_tensor), normed_data)
             normed_data = tf.map_fn(lambda line: tf.math.add(line,mu_tensor), normed_data)
         # back to original shape with batch dimension
-        if data.ndim == 3:
+        if tf.math.equal(tf.size(tf.shape(data)), tf.constant(3)):
             normed_data = tf.reshape(normed_data, o_shape)
 
         return normed_data
     
-    def scale_dict(self, data, action, in_out, xy_tensor_key):
-        normed_data = dict(data)
-        normed_data[xy_tensor_key] = self.scale_tensor(data[xy_tensor_key], action, in_out)
+    # def scale_dict(self, data, action, in_out, xy_tensor_key):
+    #     normed_data = dict(data)
+    #     normed_data[xy_tensor_key] = self.scale_tensor(data[xy_tensor_key], action, in_out)
         
-        return normed_data
+    #     return normed_data
 
     def generate_noise_std_vect(self, std_orig_scale, noise_cols, ordered_col_list):
         '''
@@ -170,6 +170,16 @@ class DataDeNormalizer():
 
         return std_list
 
+    def quick_xy_normer(self, d):
+        mu_tensor = tf.constant([self.scale_dict["pos_x"]["mu"], self.scale_dict["pos_y"]["mu"]], dtype=tf.float64)
+        std_tensor = tf.constant([self.scale_dict["pos_x"]["std"], self.scale_dict["pos_y"]["std"]], dtype=tf.float64)
+    
+        normed_data = d["xy"]
+        normed_data = tf.map_fn(lambda line: tf.math.subtract(line,mu_tensor), normed_data)
+        normed_data = tf.map_fn(lambda line: tf.math.divide(line,std_tensor), normed_data)
+        d["xy"] = normed_data
+        return d
+
     # Getters and Setters
     @property
     def scale_dict(self):
@@ -188,6 +198,24 @@ class DataDeNormalizer():
         return self._out_dict
 
 def __test():
+    # Create example data to test
+    t00 = 20*tf.random.uniform((17,6,1))
+    t01 = -2*tf.random.uniform((17,6,1))
+
+    t1 = tf.random.uniform((17,6,2))
+    t2 = tf.random.uniform((17,6,2))
+    t3 = tf.random.uniform((17,6,2))
+
+    in_dict = {"a": 0, "b": 1}
+
+    data_dict = dict(zip(
+    ["a", "b"], 
+    [tf.reshape(t00,(-1)), tf.reshape(t01,(-1))]
+    ))
+    normer = DataDeNormalizer(data_dict, in_dict, in_dict)
+    normed = normer.scale_tensor(t1, "normalize", "in")
+    normed = normer.scale_tensor(normed, "denormalize", "in")
+
     # create example data to test
     n_rep = 3
     bs = 2
@@ -201,33 +229,33 @@ def __test():
         ))
     dataframe = pd.DataFrame({'a': data_a, 'b': data_b, 'c': data_c})
 
-    # Test the scaling of a TF batch
-    one_batch = np.transpose(np.vstack(list(data_dict.values())))
-    batch_list = [one_batch for i in range(bs)]
-    data_tensor = tf.constant(np.stack(batch_list))
+    # # Test the scaling of a TF batch
+    # one_batch = np.transpose(np.vstack(list(data_dict.values())))
+    # batch_list = [one_batch for i in range(bs)]
+    # data_tensor = tf.constant(np.stack(batch_list))
 
-    normer = DataDeNormalizer(data_dict)
-    normed = normer.scale_tensor(data_tensor, list(data_dict.keys()), "normalize")
-    denormed = normer.scale_tensor(normed, list(data_dict.keys()), 'denormalize')
+    # normer = DataDeNormalizer(data_dict)
+    # normed = normer.scale_tensor(data_tensor, list(data_dict.keys()), "normalize")
+    # denormed = normer.scale_tensor(normed, list(data_dict.keys()), 'denormalize')
 
-    print("Tensor (de)normalization:")
-    print(normed)
-    print(denormed)
+    # print("Tensor (de)normalization:")
+    # print(normed)
+    # print(denormed)
 
-    # Test the scaling of the dataframe
-    normer_df = DataDeNormalizer.from_dataframe(dataframe, ["a", "b", "c"])
-    normed_df = normer.scale_dataframe(dataframe, ["a", "b"], "normalize")
-    denormed_df = normer.scale_dataframe(normed_df, ["a", "b"], "denormalize")
+    # # Test the scaling of the dataframe
+    # normer_df = DataDeNormalizer.from_dataframe(dataframe, ["a", "b", "c"])
+    # normed_df = normer.scale_dataframe(dataframe, ["a", "b"], "normalize")
+    # denormed_df = normer.scale_dataframe(normed_df, ["a", "b"], "denormalize")
 
-    print("Dataframe (de)normalization:")
-    print(dataframe)
-    print(normed_df)
-    print(denormed_df)
+    # print("Dataframe (de)normalization:")
+    # print(dataframe)
+    # print(normed_df)
+    # print(denormed_df)
 
-    # Actual testing
-    assert np.all([denormed, data_tensor])
-    assert dataframe.equals(denormed_df)
-    #TODO: Write asserton for normed vector
+    # # Actual testing
+    # assert np.all([denormed, data_tensor])
+    # assert dataframe.equals(denormed_df)
+    # #TODO: Write asserton for normed vector
 
 
     return None

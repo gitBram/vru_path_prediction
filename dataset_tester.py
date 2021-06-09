@@ -22,8 +22,6 @@ def main():
         scene_data.load_ind(root_datasets, 11)
 
         ''' time to create df datasets '''
-        tf.executing_eagerly()
-
         my_ds = TFDataSet.init_as_fixed_length(scene_data.traj_dataframe, scale_list=["pos_x"], normalize_data=True, seq_in_length=5, label_length=1, seq_stride=1)
 
         print(my_ds.in_dict)

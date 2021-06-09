@@ -45,8 +45,7 @@ class DLTrainer:
 
     def load_weights(self, save_path):
         # do a prediction in order to initialize the model...
-        self.model(tf.zeros((1, self.num_in_steps, self.num_in_features)))
-
+        # self.model(tf.zeros((1, self.num_in_steps, self.num_in_features)))
         # now really load the weights
         self.model.load_weights(save_path)
 
@@ -158,10 +157,12 @@ class DLTrainer:
 
         return None
 
-    def LSTM_one_shot_predictor_named_i(self, ds_creator_inst, lstm_layer_size, dense_layer_size, n_LSTM_layers, n_dense_layers):
+    def LSTM_one_shot_predictor_named_i(self, ds_creator_inst, lstm_layer_size, dense_layer_size, n_LSTM_layers, n_dense_layers, extra_features):
+        
         in_xy = Input(shape=(ds_creator_inst.num_in_steps, ds_creator_inst.num_in_features), name="in_xy")
         
-        probs = Input(shape=(4), name="probs")
+        all_destinations = Input(shape=(8,3), name="all_destinations")
+        n = Flatten()(all_destinations)
 
         m = LSTM(lstm_layer_size, return_sequences=True)(in_xy)
         
@@ -169,7 +170,7 @@ class DLTrainer:
             m = LSTM(lstm_layer_size, return_sequences=False)(m)
 
         m = Flatten()(m)
-        m = Concatenate()([m, probs])
+        m = Concatenate()([m, n])
 
         m = Dense(dense_layer_size)(m)
         for i in range(max(n_dense_layers - 2, 0)):
@@ -180,7 +181,7 @@ class DLTrainer:
         m = Reshape([ds_creator_inst.num_out_steps, ds_creator_inst.num_out_features])(m)
 
         model = tf.keras.Model(
-            [in_xy, probs],
+            [in_xy, all_destinations],
             [m]
         )
         print(model.summary())
@@ -234,6 +235,8 @@ class DLTrainer:
         self.num_out_steps = ds_creator_inst.num_out_steps
 
         return None
+    
+
 
     # Setters/Getters
     @property

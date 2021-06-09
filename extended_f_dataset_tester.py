@@ -55,19 +55,23 @@ def main():
         "n_destinations": 5,
         "n_points": 5
     }
-    my_ds = TFDataSet.init_as_fixed_length(scene_data.traj_dataframe.head(200), scale_list=["pos_x", "pos_y"], seq_in_length=5, label_length=1, seq_stride=1,
-    extra_features_dict=extra_features_dict, graph=g)
 
-    # save the dataset
-    # with open('data/pickle/dataset.pickle', 'wb') as f:
-    #     pickle.dump(my_ds, f)
+    # Load data in order to not need to do calculations again
+    with open("data/pickle/ds_creation_d/my_dict2.pickle", 'rb') as handle:
+        my_ds_creation_dict = pickle.load(handle)
+
+    my_ds = TFDataSet.init_as_fixed_length(scene_data.traj_dataframe, scale_list=["pos_x", "pos_y"], seq_in_length=5, label_length=1, seq_stride=1,
+    extra_features_dict=extra_features_dict, graph=g,ds_creation_dict=my_ds_creation_dict, noise_std=.15) # save_folder="data/pickle/ds_creation_d/my_dict2.pickle", 
+    
 
     normed, denormed = my_ds.example_dict("train", "in_xy")
     my_in, my_out = denormed
-        # PLOT BASIC PREDICTION
+    print(normed)
+
+    # PLOT BASIC PREDICTION
     fig1, ax1 = plt.subplots()
     
-    lbls = my_in["labels"][0].to_tensor()
+    lbls = my_in["labels"][0]
     scene_data.plot_on_image([my_in["in_xy"][0], lbls], 
     save_path='data/images/extra_f/in_out.png', ms = [6, 1], ax=ax1,
     col_num_dicts=[my_ds.generalised_in_dict, my_ds.generalised_out_dict])
@@ -77,12 +81,7 @@ def main():
 
     scene_data.plot_dest_probs(dest_l, dest_p, 3, 200, ax = ax1, save_path = 'data/images/extra_f/destination_probs.png')
     
-    a = np.ones((2,5,2))
-    b = np.ones((5,2))
-    aa = 2*a
-    bb = 2*b
-    print(scene_data.return_accuracy(a, aa))
-    print(scene_data.return_accuracy(b, bb))
+
 def __return_waypoints_ind():
     d = np.array([
     [ 65, -36],
