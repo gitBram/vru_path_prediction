@@ -63,17 +63,17 @@ class DataDeNormalizer():
     def scale_dict_f(self, data_dict, action):
         data_dict_c = dict(data_dict)
         xy_key = "in_xy"
-        data_dict_c[xy_key] = self.scale_tensor(data_dict_c[xy_key], "denormalize", "in")
+        data_dict_c[xy_key] = self.scale_tensor(data_dict_c[xy_key], action, "in")
         if "all_points" in data_dict_c:
             locations = data_dict_c["all_points"][:, :, 0:2]
-            locations = self.scale_tensor(locations, "denormalize", "in", dict(zip(["pos_x", "pos_y"],[0,1])))
+            locations = self.scale_tensor(locations, action, "in", dict(zip(["pos_x", "pos_y"],[0,1])))
             probs = tf.expand_dims(data_dict_c["all_points"][:,:,2],axis=-1)
             data_dict_c["all_points"] = tf.concat(
                 [locations, probs], 
                 axis=-1)
         if "all_destinations" in data_dict_c:
             locations = data_dict_c["all_destinations"][:, :, 0:2]
-            locations = self.scale_tensor(locations, "denormalize", "in", dict(zip(["pos_x", "pos_y"],[0,1])))
+            locations = self.scale_tensor(locations, action, "in", dict(zip(["pos_x", "pos_y"],[0,1])))
             probs = tf.expand_dims(data_dict_c["all_destinations"][:,:,2],axis=-1)
             data_dict_c["all_destinations"] = tf.concat(
                 [locations, probs], 

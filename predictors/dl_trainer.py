@@ -87,8 +87,76 @@ class DLTrainer:
                 composed_output_s = output_s
                 composed_output = output
 
-        return composed_output, composed_output_s        
-    
+        return composed_output, composed_output_s     
+
+    def predict_dict(self, input_dict, scale_input_tensor, n_evaluations = 1):
+        ''' 
+        Use the model to do a prediction based on a dictionary model input
+        '''
+        input_dict_c = dict(input_dict)
+        # check that input is 3D (batch - time - feature)
+        if len(input_dict_c["in_xy"].shape) <= 2:
+            input_dict_c["in_xy"] = tf.reshape(input_dict_c["in_xy"], [1, -1, self.num_in_features])
+        
+        # sanity check
+        if n_evaluations < 1:
+            raise ValueError("Number of evaluations should be 1 or larger. %d was received." % (n_evaluations))
+
+        if not (type(n_evaluations)==int):
+            raise ValueError("Number of evaluations should be of type int. %s type was received." % (type(n_evaluations)))
+                
+        composed_output = composed_output_s = None
+
+        for i in range(n_evaluations):
+            # scale input tensor if requested, get prediction
+            if scale_input_tensor:
+                output = self.model(self.scaler.scale_dict_f(input_dict_c, "normalize"))
+            else:
+                output = self.model(input_dict_c)
+
+            # scale output tensor if needed
+            if self.scaler is not None:
+                output_s = self.scaler.scale_tensor(output, "denormalize", "out")
+            else:
+                output_s = output
+            
+            # aggregate the outputs, only useful for epistemic 
+            try:
+                composed_output_s = tf.concat([composed_output_s,output_s], axis=1)
+                composed_output = tf.concat([composed_output,output], axis=1)
+            except:
+                composed_output_s = output_s
+                composed_output = output
+
+        return composed_output, composed_output_s  
+
+    def predict_repetitively_dict(self, input_dict, scale_input_tensor, num_repetitions, fixed_len_input):
+        input_dict_c = dict(input_dict)
+        # Make sure input tensor is 3d 
+        if len(input_dict_c["in_xy"].shape) <= 2:
+            input_dict_c["in_xy"] = tf.expand_dims(input_dict_c["in_xy"], axis=0)
+
+        # Get type same with output of model (float instead of double) to be able to concat
+        input_dict_c["in_xy"] = tf.cast(input_dict_c["in_xy"], dtype=tf.float32)
+        assembled_output = None
+        for i in range(num_repetitions):
+            # get one prediction
+            new_output, new_output_s = self.predict_dict(input_dict_c, scale_input_tensor)
+
+            try:
+                assembled_output = tf.concat([assembled_output, new_output_s], axis=1)
+            except:
+                assembled_output = new_output_s
+
+            # add the output to the new input, drop first of input in case it input should be kept constant length
+            input_dict_c["in_xy"] = tf.concat([input_dict_c["in_xy"], new_output], axis=1)
+
+            # drop the n first rows if input has to stay same length
+            if fixed_len_input:
+                input_dict_c["in_xy"] = input_dict_c["in_xy"][:, -self.num_in_steps:, :]
+
+        return assembled_output
+
     def predict_repetitively(self, input_tensor, scale_input_tensor, num_repetitions, fixed_len_input):
         # Make sure input tensor is 3d 
         if len(input_tensor.shape) <= 2:
@@ -110,8 +178,8 @@ class DLTrainer:
             assembled_input = tf.concat([assembled_input, new_output], axis=1)
 
             # drop the n first rows if input has to stay same length
-            out_len = new_output.shape[-2]
-            assembled_input = assembled_input[:, -self.num_in_steps:, :]
+            if fixed_len_input:
+                assembled_input = assembled_input[:, -self.num_in_steps:, :]
 
         return assembled_output
 
