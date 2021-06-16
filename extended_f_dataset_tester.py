@@ -57,11 +57,11 @@ def main():
     }
 
     # Load data in order to not need to do calculations again
-    with open("data/pickle/ds_creation_d/my_dict2.pickle", 'rb') as handle:
+    with open("data/pickle/ds_creation_d/my_dict_comb.pickle", 'rb') as handle:
         my_ds_creation_dict = pickle.load(handle)
 
-    my_ds = TFDataSet.init_as_fixed_length(scene_data.traj_dataframe, scale_list=["pos_x", "pos_y"], seq_in_length=5, label_length=1, seq_stride=1,
-    extra_features_dict=extra_features_dict, graph=g,ds_creation_dict=my_ds_creation_dict, noise_std=.15) # save_folder="data/pickle/ds_creation_d/my_dict2.pickle", 
+    my_ds = TFDataSet.init_as_fixed_length(scene_data.traj_dataframe, scale_list=["pos_x", "pos_y"], seq_in_length=[4,5], label_length=2, seq_stride=1,
+    extra_features_dict=extra_features_dict, graph=g, ds_creation_dict=my_ds_creation_dict, noise_std=.15) # save_folder="data/pickle/ds_creation_d/my_dict_comb.pickle",
     
 
     normed, denormed = my_ds.example_dict("train", "in_xy")

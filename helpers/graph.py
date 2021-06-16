@@ -3,6 +3,7 @@ import warnings
 from math import floor, ceil, sqrt
 import matplotlib.pyplot as plt 
 import networkx as nx
+from numpy.core.numeric import False_
 from tensorflow.python.types.core import Value
 
 # TODO: Add observers in order to only do the necessary recalculations https://stackoverflow.com/questions/6190468/how-to-trigger-function-on-value-change
@@ -108,9 +109,7 @@ class Graph():
             return wayp_names, wayp_locs
         except:
             warnings.warn("Unused path in transition matrix due to not reaching two waypoints", Warning)
-            return [], []
-
-        
+            return [], []        
 
     def __point_names_to_locs(self, point_names):
         locs = []
@@ -133,13 +132,18 @@ class Graph():
         self.trans_mat_normed = trans_mat_normed
  
 
-    def calculate_destination_probs(self, path, dests_or_points = "destinations"):
+    def calculate_destination_probs(self, path, dests_or_points = "destinations", norm_probs=False):
         ''' 
         Calculate the probability of the current path being one towards each of the destinations.
         Wrapper for __calculate_destination_probs_back in order to also get estimates if only one point is known
         '''
         # Basic check
         assert len(path) > 0
+        
+        # Check if path is list and not just one point name
+        accepted_types = [list, np.ndarray]
+        if not type(path) in accepted_types:
+            path = [path]
 
         for point in path:
             assert point in self.points_names
@@ -151,7 +155,6 @@ class Graph():
 
             # get all the points that this point is connected to according to graph
             connected_ids = np.where(self.trans_mat_normed[start_id,:]>0.)
-            print(connected_ids)
             connected_trans_vals = self.trans_mat_normed[start_id, connected_ids]
 
             connected_ids = np.squeeze(connected_ids)
@@ -177,14 +180,19 @@ class Graph():
                         prob_dict[dest] = prob_dict_c[dest] * connected_trans_val
 
         else:
-            print("multival prediction")
             # multiple observations are available
             prob_dict = self.__calculate_destination_probs_back(path, dests_or_points)
 
         # replace nan values by zeros
         no_nan_vals = np.nan_to_num(list(prob_dict.values()))
+        prob_dict = dict(zip(prob_dict.keys(),no_nan_vals))
 
-        return dict(zip(prob_dict.keys(),no_nan_vals))
+        # Norm probabilities to sum to 1 if requested
+        if norm_probs:
+            total = sum(prob_dict.values())
+            prob_dict = {k: v / total for k, v in prob_dict.values()}
+
+        return prob_dict
     
     def __calculate_destination_probs_back(self, path, dests_or_points):
         '''
@@ -227,6 +235,8 @@ class Graph():
         # print(start_to_dest_prob)
         # print('Full calculated probs:')
         # print(full_prob)
+
+
         return full_prob
 
     def calculate_path_prob(self, path):
@@ -310,7 +320,7 @@ class Graph():
 
         return min_steps, max_steps
 
-    def __calculate_prob_n_steps(self, start_node, end_node, min_steps, max_steps, recalculate_mats = True):
+    def __calculate_prob_n_steps(self, start_node, end_node, min_steps, max_steps, recalculate_mats = False):
         # in case there was no shortest route found, no chance of getting there so zero probability returned
         if min_steps == 0. and max_steps == 0.:
             return 0.
@@ -398,7 +408,6 @@ class Graph():
         for edge in graph.edges():
             weight = trans_mat[edge[0], edge[1]]
             weights.append(weight)
-        print(graph.edges)
         # set node color depending on destination or waypoint
         d_c = 'red'
         w_c = 'green'
@@ -523,7 +532,7 @@ class Graph():
         return a location tensor and probability tensor for the connected points to a certain waypoint
         No filtering based on distance
         '''
-        self.recalculate_trans_mat_dependencies()
+        # self.recalculate_trans_mat_dependencies()
         current_waypoint, _ = self.find_closest_point(measurement)
         wp_index = self.points_indices_dict[current_waypoint]
         
@@ -692,16 +701,15 @@ def _test():
     a,l = g.analyse_full_signal(path2, add_to_trans_mat = True)
     a,l = g.analyse_full_signal(path3, add_to_trans_mat = True)
     a,l = g.analyse_full_signal(path4, add_to_trans_mat = True)
-    print("Locations:")
-    print(a)
-    print(l)
+    # print("Locations:")
+    # print(a)
+    # print(l)
     g.recalculate_trans_mat_dependencies()
     my_graph = g.create_graph(.05)
     g.visualize_graph(my_graph, './data/images/graph.png', g_type='relative')
 
-    print('here')
     g.calculate_destination_probs(['w1'])
-    print(g.calculate_prob('d1', 'd1'))
+    # print(g.calculate_prob('d1', 'd1'))
     ''' Test for calculate_path_prob '''
     assert g.calculate_path_prob(['d1', 'w1', 'w2', 'w3']) == 1*.75*.25
 

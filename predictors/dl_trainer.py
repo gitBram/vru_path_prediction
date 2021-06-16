@@ -1,5 +1,6 @@
 ''' class for training deep learning models and setting parameters for the training phase'''
 
+from numpy.core.fromnumeric import var
 import tensorflow as tf
 from tensorflow.python import keras
 from keras.layers.core import Lambda
@@ -153,6 +154,7 @@ class DLTrainer:
 
             # drop the n first rows if input has to stay same length
             if fixed_len_input:
+                print(input_dict_c["in_xy"])
                 input_dict_c["in_xy"] = input_dict_c["in_xy"][:, -self.num_in_steps:, :]
 
         return assembled_output
@@ -192,6 +194,7 @@ class DLTrainer:
 
         return None
 
+
     def LSTM_one_shot_predictor(self, ds_creator_inst, lstm_layer_size, dense_layer_size, n_LSTM_layers, n_dense_layers):
         in_xy = Input(shape=(ds_creator_inst.num_in_steps, ds_creator_inst.num_in_features), name = 'in_xy')
         m = LSTM(lstm_layer_size, return_sequences=True)(in_xy)
@@ -225,22 +228,37 @@ class DLTrainer:
 
         return None
 
-    def LSTM_one_shot_predictor_named_i(self, ds_creator_inst, lstm_layer_size, dense_layer_size, n_LSTM_layers, n_dense_layers, extra_features):
-        
-        in_xy = Input(shape=(ds_creator_inst.num_in_steps, ds_creator_inst.num_in_features), name="in_xy")
-        
-        all_destinations = Input(shape=(8,3), name="all_destinations")
-        n = Flatten()(all_destinations)
+    def LSTM_one_shot_predictor_named_i(self, ds_creator_inst, lstm_layer_size, 
+    dense_layer_size, n_LSTM_layers, n_dense_layers, extra_features, var_time_len):
+        if not var_time_len:
+            print(ds_creator_inst.num_in_steps)
+            in_xy = Input(shape=(ds_creator_inst.num_in_steps, ds_creator_inst.num_in_features), name="in_xy")
+        else:
+            in_xy = Input(shape=(None, ds_creator_inst.num_in_features), name="in_xy")
+        print(in_xy)
 
         m = LSTM(lstm_layer_size, return_sequences=True)(in_xy)
-        
-        for i in range(n_LSTM_layers - 1):
-            m = LSTM(lstm_layer_size, return_sequences=False)(m)
+
+        for i in range(n_LSTM_layers - 2):
+            m = LSTM(lstm_layer_size, return_sequences=True)(m)
+
+        m = LSTM(lstm_layer_size, return_sequences=False)(m)
 
         m = Flatten()(m)
-        m = Concatenate()([m, n])
+        print(m)
+
+        # add inputs for the extra features
+        concat_list = [m]
+        if "all_destinations" in extra_features:
+            all_destinations = Input(shape=(8,3), name="all_destinations")
+            print(all_destinations)
+            n = Flatten()(all_destinations)
+            concat_list.append(n)
+
+        m = Concatenate()(concat_list)
 
         m = Dense(dense_layer_size)(m)
+
         for i in range(max(n_dense_layers - 2, 0)):
             m = Dense(dense_layer_size)(m)
         
@@ -248,11 +266,14 @@ class DLTrainer:
                                     kernel_initializer=tf.initializers.random_uniform)(m)
         m = Reshape([ds_creator_inst.num_out_steps, ds_creator_inst.num_out_features])(m)
 
+        input_list = [in_xy]
+        if "all_destinations" in extra_features:
+            input_list.append(all_destinations)
         model = tf.keras.Model(
-            [in_xy, all_destinations],
+            input_list,
             [m]
         )
-        print(model.summary())
+        
         self.model = model        
 
         # copy the scaler

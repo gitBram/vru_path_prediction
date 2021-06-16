@@ -3,6 +3,7 @@ import numpy as np
 from .de_normalizer import DataDeNormalizer
 import pickle
 import os
+from tqdm import tqdm
 
 ''' Create train, test and verification TF data pipeline for training from a big datasource or multiple datasources'''
 
@@ -51,15 +52,15 @@ class TFDataSet():
         self.size_dict = size_dict
 
     @classmethod
-    def init_as_fixed_length(cls, dataframe, do_shuffle = True, shuffle_buffer_size = 100,
+    def init_as_fixed_length(cls, dataframe, graph, do_shuffle = True, shuffle_buffer_size = 100,
                         batch_size = 5, normalize_data = True,
                         label_length = 1, # timesteps to be considered in in/out frame, stride with which data is windowed
                         train_perc = .7, test_perc = .2, val_perc = .1,
                         feature_list_in = ['pos_x', 'pos_y'], feature_list_out = ['pos_x', 'pos_y'], # all features that will be in in-/output
-                        scale_list = ['pos_x', 'pos_y'],
+                        scale_list = ['pos_x', 'pos_y'], 
                         id_col_name = "agent_id", x_col_name = 'pos_x', y_col_name = 'pos_y',
                         seq_in_length = None, seq_stride = None, noise_std = None, n_repeats = 1,
-                        extra_features_dict = None, graph = None,
+                        extra_features_dict = None, 
                         ds_creation_dict = None, save_folder = None):
         '''
         Create fixed length dataset (seq_in_length and seq_stride not None) or simple zero padded dataset with full paths (seq_in_length and seq_stride None)
@@ -140,65 +141,69 @@ class TFDataSet():
         # inits
         ds = None
         df_c = df.copy()
+        max_label_len = df_c.groupby(id_col_name).count().max()[0]
 
         # Sanity check
         if extra_features_dict is not None:
             extra_f_allowed = ["all_points", "all_destinations", "n_connected_points", "n_destinations", "n_points"]
+            extra_f_allowed2 = [f_allowed + "_after" for f_allowed in extra_f_allowed]
+            extra_f_allowed = extra_f_allowed + extra_f_allowed2
             for ef in list(extra_features_dict.keys()):
                 if not ef in extra_f_allowed:
                     raise ValueError("Extra features should be one of following:%s."%(extra_f_allowed))
 
         # Extracting paths from dataframe
         ds_pickle_list = []
-        for i in df_c[id_col_name].unique():
-            # create a dictionary for this path, will eventually be used for TF DS
-            ds_dict = dict()            
-            # extract a dataframe of one trajectory
-            path_df = df_c.loc[df_c[id_col_name] == i]
-            path_df = path_df.drop(columns = id_col_name)
-            path_np = path_df.to_numpy()
+        if not type(seq_in_length) == list:
+            seq_in_length = [seq_in_length]
+        
+        for in_length in seq_in_length:
+            for i in tqdm(df_c[id_col_name].unique()):
+                # create a dictionary for this path, will eventually be used for TF DS
+                ds_dict = dict()            
+                # extract a dataframe of one trajectory
+                path_df = df_c.loc[df_c[id_col_name] == i]
+                path_df = path_df.drop(columns = id_col_name)
+                path_np = path_df.to_numpy()
 
-            # scaling if needed
-            # if normer is not None:
-            #     path_df = normer.scale_dataframe(path_df, scale_list, "normalize")
-            #     path_np = path_df.to_numpy()
+                # Windowing if needed
+                if not (seq_in_length is None or seq_stride is None):
+                    def windower(a, window_size):
+                        n = a.shape[0]
+                        n_out_frames = (n-window_size+1)
+                        if n >= window_size:
+                            return np.stack(a[i:i+window_size] for i in range(0,n_out_frames)), n_out_frames
+                        else:
+                            return np.array([]), n_out_frames
+                    
+                    path_np_w, n_frames = windower(path_np, in_length + lbl_length)
 
-            # Windowing if needed
-            if not (seq_in_length is None or seq_stride is None):
-                def windower(a, window_size):
-                    n = a.shape[0]
-                    n_out_frames = (n-window_size+1)
-                    if n >= window_size:
-                        return np.stack(a[i:i+window_size] for i in range(0,n_out_frames)), n_out_frames
-                    else:
-                        return np.array([]), n_out_frames
-                
-                path_np_w, n_frames = windower(path_np, seq_in_length + lbl_length)
+                    # if no windows were returned --> skip to next path
+                    if path_np_w.size == 0:
+                        continue            
 
-                # if no windows were returned --> skip to next path
-                if path_np_w.size == 0:
-                    continue            
+                ds_dict["xy"]=path_np_w
 
-            ds_dict["xy"]=path_np_w
+                # include the labels full future path for later analysis
+                label_list = []
+                for i in range(n_frames):
+                    label_list.append(path_np[in_length+i:,:])
 
-            # include the labels full future path for later analysis
-            label_list = []
-            for i in range(n_frames):
-                label_list.append(path_np[seq_in_length+i:,:])
+                ds_dict["labels"]=tf.ragged.constant(label_list).to_tensor()
+                lbl_len = ds_dict["labels"].shape[0]
+                the_type = ds_dict["labels"].dtype
 
-            ds_dict["labels"]=tf.ragged.constant(label_list).to_tensor()
-            lbl_len = ds_dict["labels"].shape[0]
-            the_type = ds_dict["labels"].dtype
-            ds_dict["labels"] = tf.concat([ds_dict["labels"], tf.zeros([lbl_len, 40-lbl_len, 2], dtype=the_type)], axis=-2)
+                # if error is raised here, give it a bigger max label length
+                ds_dict["labels"] = tf.concat([ds_dict["labels"], tf.zeros([lbl_len, max_label_len-lbl_len, 2], dtype=the_type)], axis=-2)
 
-            # include the wanted extra features
-            extra_f_sizes = None
-            if not extra_features_dict is None:
-                before_or_after_split = "before"
-                extra_f_sizes = dict()
-                # ["all_points", "all_destinations", "n_connected_points", "n_points", "n_destinations"]
-                extra_f_keys = list(extra_features_dict.keys())
-                if before_or_after_split =="before":
+                # include the wanted extra features
+                extra_f_sizes = None
+                if not extra_features_dict is None:
+                    before_or_after_split = "before"
+                    extra_f_sizes = dict()
+                    # ["all_points", "all_destinations", "n_connected_points", "n_points", "n_destinations"]
+                    extra_f_keys = list(extra_features_dict.keys())
+
                     if "all_points" in extra_f_keys:
                         extra_f = "all_points" 
                         ds_dict[extra_f] = self.__get_point_prob_tensor(self=self, path=path_np, normer=normer, graph=graph, points_or_dests="points")
@@ -223,12 +228,12 @@ class TFDataSet():
                         extra_features_dict[extra_f], "points")
                         # Multiply the extra feature for each window
                         ds_dict[extra_f] = tf.tile(tf.expand_dims(ds_dict[extra_f],0), [n_frames, 1, 1])
-                else:
+
                     for path in path_np_w:
                         # no cheating: only get the points that will be used as input
-                        path = path[:seq_in_length + 1, :]
-                        if "all_points" in extra_f_keys:
-                            extra_f = "all_points" 
+                        path = path[:-lbl_length, :]
+                        if "all_points_after" in extra_f_keys:
+                            extra_f = "all_points_after" 
                             # Get the feature output
                             f_result = tf.expand_dims(
                                 self.__get_point_prob_tensor(self=self, path=path, normer=normer, graph=graph, points_or_dests="points"),
@@ -239,8 +244,8 @@ class TFDataSet():
                             else:
                                 ds_dict[extra_f] = f_result
 
-                        if "all_destinations" in extra_f_keys:
-                            extra_f = "all_destinations"
+                        if "all_destinations_after" in extra_f_keys:
+                            extra_f = "all_destinations_after"
                             f_result = tf.expand_dims(
                                 self.__get_point_prob_tensor(self=self, path=path, normer=normer, graph=graph, points_or_dests="destinations"),
                                 axis=0)
@@ -251,10 +256,10 @@ class TFDataSet():
                                 ds_dict[extra_f] = f_result
                             # Save the shape of the feature for setting up the neural network
                             extra_f_sizes[extra_f] = ds_dict[extra_f].shape
-                        if "n_connected_points" in extra_f_keys:
-                            extra_f = "n_connected_points"
-                        if "n_destinations" in extra_f_keys:
-                            extra_f = "n_destinations"
+                        if "n_connected_points_after" in extra_f_keys:
+                            extra_f = "n_connected_points_after"
+                        if "n_destinations_after" in extra_f_keys:
+                            extra_f = "n_destinations_after"
                             f_result = tf.expand_dims(
                                 self.__get_n_point_prob_tensor(self, path, normer, graph, extra_features_dict[extra_f], "destinations"),
                                 axis=0)
@@ -265,8 +270,8 @@ class TFDataSet():
                                 ds_dict[extra_f] = f_result
                             # Save the shape of the feature for setting up the neural network
                             extra_f_sizes[extra_f] = ds_dict[extra_f].shape
-                        if "n_points" in extra_f_keys:
-                            extra_f = "n_points"
+                        if "n_points_after" in extra_f_keys:
+                            extra_f = "n_points_after"
                             f_result = tf.expand_dims(
                                 self.__get_n_point_prob_tensor(self, path, normer, graph, extra_features_dict[extra_f], "points"),
                                 axis=0)
@@ -278,7 +283,7 @@ class TFDataSet():
                             # Save the shape of the feature for setting up the neural network
                             extra_f_sizes[extra_f] = ds_dict[extra_f].shape
             
-            ds_pickle_list.append(ds_dict)
+                ds_pickle_list.append(ds_dict)
 
         return ds_pickle_list
 
@@ -302,7 +307,10 @@ class TFDataSet():
                     return x
                 path_ds = path_ds.map(add_noise)
             '''
-            path_ds = tf.data.Dataset.from_tensors(ds_dict)   
+            for key in ds_dict.keys():
+                ds_dict[key]=tf.cast(ds_dict[key], dtype=tf.float64)
+
+            path_ds = tf.data.Dataset.from_tensors(ds_dict)  
 
             # Add noise if wanted
             if noise_std is not None:
@@ -327,8 +335,8 @@ class TFDataSet():
 
         # Let's remove the first dimension (*random*,timesteps, feature_num) to (timesteps, feature_num)
 
-        ds = ds.flat_map(lambda x: tf.data.Dataset.from_tensor_slices(x))        
-        
+        ds = ds.flat_map(lambda x: tf.data.Dataset.from_tensor_slices(x))                
+
         def extract_columns(d):           
             d["in_xy"]= tf.transpose(tf.gather(tf.transpose(d["xy"][:-lbl_length]),in_col_nums))
             out = tf.transpose(tf.gather(tf.transpose(d["xy"][-lbl_length:]),out_col_nums))
@@ -340,15 +348,15 @@ class TFDataSet():
         if shuffle == True: 
             ds = ds.shuffle(buffer_size=shuffle_buffer_size) 
 
-        if not (seq_in_length is None or seq_stride is None):
-            ds = ds.batch(batch_size, drop_remainder=True)
-        else:
-            ds = ds.padded_batch(batch_size, padding_values = None)#.prefetch(1)
+
+
+        # if not (type(seq_in_length)==list or seq_stride is None):
+        #     ds = ds.batch(batch_size, drop_remainder=True)
+        # else:
+        ds = ds.padded_batch(batch_size, padding_values = tf.constant(-100.,dtype=tf.float64))#.prefetch(1)
 
         return ds.repeat(n_repeats), size_dict
-        
-        
-        return None
+
     def __get_n_point_prob_tensor(self, path, normer, graph, n, points_or_dests = "points"):
         # sanity check
         allowed_pos = ["points", "destinations"]
@@ -371,6 +379,7 @@ class TFDataSet():
             prob_tensor = tf.constant(prob_list, dtype=tf.float32)
             if normer is not None:
                 loc_tensor = normer.scale_tensor(loc_tensor, "normalize", "in", dict(zip(["pos_x", "pos_y"],[0,1])))
+            prob_tensor = tf.reshape(tf.constant(prob_list, dtype=tf.float32),[-1, 1])
             return tf.concat([loc_tensor,prob_tensor], axis=1)
 
     def __get_point_prob_tensor(self, path, normer, graph, points_or_dests = "points"):
@@ -397,11 +406,18 @@ class TFDataSet():
         else:
             # Option 1: Just find probs from closest point (even though not in predefined range)
             node,_ = graph.find_closest_point(path[-1])
-            location_list, prob_list = graph.calculate_destination_probs(node, dests_or_points=points_or_dests)
+            out = graph.calculate_destination_probs(node, dests_or_points=points_or_dests)
+            
+            location_list = []
+            prob_list = []
+            for key, prob in zip(out.keys(), out.values()):
+                location_list.append(graph.points_dict[key])
+                prob_list.append(prob)
             loc_tensor = tf.constant(location_list, dtype=tf.float32)
             prob_tensor = tf.constant(prob_list, dtype=tf.float32)
             if normer is not None:
                 loc_tensor = normer.scale_tensor(loc_tensor, "normalize", "in", dict(zip(["pos_x", "pos_y"],[0,1])))
+            prob_tensor = tf.reshape(tf.constant(prob_list, dtype=tf.float32),[-1, 1])
             return tf.concat([loc_tensor,prob_tensor], axis=1)
             # Option 2: Returning zeros
             '''

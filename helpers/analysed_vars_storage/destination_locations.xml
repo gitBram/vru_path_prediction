@@ -35,5 +35,39 @@
                 <y>-9.</y>
             </dest>
         </key>
+        <key name="7">
+            <dest>
+                <x>36.</x>
+                <y>-43.</y>
+            </dest>
+            <dest>
+                <x>45.</x>
+                <y>-52</y>
+            </dest>
+            <dest>
+                <x>76.</x>
+                <y>-66.</y>
+            </dest>
+            <dest>
+                <x>85.</x>
+                <y>-57.</y>
+            </dest>
+            <dest>
+                <x>72.</x>
+                <y>-24.</y>
+            </dest>
+            <dest>
+                <x>64.</x>
+                <y>-16.</y>
+            </dest>
+            <dest>
+                <x>36.</x>
+                <y>-3.</y>
+            </dest>
+            <dest>
+                <x>27.</x>
+                <y>-9.</y>
+            </dest>
+        </key>
     </dataset>
 </data>

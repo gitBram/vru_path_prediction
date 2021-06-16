@@ -33,7 +33,7 @@ def main():
     }
 
     # Load data in order to not need to do calculations again
-    with open("data/pickle/ds_creation_d/my_dict2.pickle", 'rb') as handle:
+    with open("data/pickle/ds_creation_d/my_dict_comb.pickle", 'rb') as handle:
         my_ds_creation_dict = pickle.load(handle)
 
     my_ds = TFDataSet.init_as_fixed_length(scene_data.traj_dataframe, scale_list=["pos_x", "pos_y"], seq_in_length=5, label_length=1, seq_stride=1,
@@ -43,14 +43,14 @@ def main():
     ''' time for some model training '''
     # BASIC TRAINER
     my_trainer = DLTrainer(max_epochs=50, patience=10)
-    network = my_trainer.LSTM_one_shot_predictor_named_i(my_ds, 64, 128, 2, 2, extra_features=[])
+    network = my_trainer.LSTM_one_shot_predictor_named_i(my_ds, 64, 128, 2, 2, 
+    extra_features=[], var_time_len=True)
 
     save_path = "data/model_weights/extra_f_predictor.h5"
     try:
         my_trainer.load_weights(save_path)
     except:
         my_trainer.compile_and_fit(my_ds, save_path)
-
     """
     # EPISTEMIC TRAINER
     my_trainer_epi = DLTrainer(max_epochs=2, patience=10)
@@ -60,10 +60,11 @@ def main():
         my_trainer_epi.load_weights(save_path)
     except:
         my_trainer_epi.compile_and_fit(my_ds, save_path)
+    """
 
     ''' time for some model predictions '''
     nxt_unsc, nxt_sc = my_ds.example_dict("test", "in_xy")
-
+    
     # Let's extract just one path to make visualisation clearer
     unscaled_ex = dict(nxt_unsc[0]), nxt_unsc[1]
     scaled_ex = dict(nxt_sc[0]), nxt_sc[1]
@@ -80,7 +81,7 @@ def main():
     except:
         my_trainer.compile_and_fit(my_ds_dict, save_path)
     print(my_trainer.model.summary())
-    """
+
     # Basic prediction
     _, output = my_trainer.predict(unscaled_ex, scale_input_tensor = False)
 
@@ -113,7 +114,7 @@ def main():
     scene_data.plot_on_image([scaled_ex, output_e], 
     save_path='data/images/predictions/example_prediction_e.png', ms = [6, 1], ax=ax3,
     col_num_dicts=[my_ds.generalised_in_dict, my_ds.generalised_out_dict])
-    """
+
     return None
 
 

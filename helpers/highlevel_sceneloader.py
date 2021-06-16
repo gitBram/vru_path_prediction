@@ -12,7 +12,7 @@ GOAL:
 '''
 
 import xml.etree.ElementTree as ET
-import os, sys
+import os, sys, yaml
 import matplotlib.pyplot as plt
 import numpy as np
 from math import floor, ceil
@@ -68,6 +68,8 @@ class HighLevelSceneLoader():
             vals = []
 
             for val in img_bound:
+              print(val.tag)
+              print(val.text)
               names.append(val.tag)
               vals.append(float(val.text))
 
@@ -75,7 +77,7 @@ class HighLevelSceneLoader():
     return img_bound_dict
 
   
-  def load_ind(self, root_datasets, file_id, 
+  def load_ind(self, root_datasets, file_id, end_file_id_range=None,
   x_col = 'pos_x', y_col = 'pos_y', split_col = 'agent_id'):
 
       # set the col names correctly
@@ -88,12 +90,39 @@ class HighLevelSceneLoader():
 
       # import ind data
       ind_root = os.path.join(root_datasets, 'inD-dataset-v1.0/data')
-      ind_dataset = loader_ind.load_ind(os.path.join(ind_root, '%02d_tracks.csv' % file_id),
-                              scene_id='1-%02d' %file_id, sampling_rate=36, use_kalman=False)
+      
+      # see whether only one or multiple files need to be loaded
+      if end_file_id_range is not None:
+        # we want to load a range of files
+
+        # get the first file in there
+        i = file_id
+        ind_dataset = loader_ind.load_ind(os.path.join(ind_root, '%02d_tracks.csv' % i),
+                              scene_id='1-%02d' %i, sampling_rate=36, use_kalman=False).data
+        i += 1
+        while True:
+          # now append the other wanted files, making sure the path id is correct          
+          add_file_data = loader_ind.load_ind(os.path.join(ind_root, '%02d_tracks.csv' % i),
+                                scene_id='1-%02d' %i, sampling_rate=36, use_kalman=False).data
+          
+          max_id = ind_dataset[split_col].max()
+          add_file_data[split_col] += max_id
+          ind_dataset = ind_dataset.append(add_file_data)     
+
+          print("Index %i and length %i"%(i, len(ind_dataset)))     
+
+          i += 1
+          if i > end_file_id_range:
+            break
+      else:
+        # we only want to load one file
+        ind_dataset = loader_ind.load_ind(os.path.join(ind_root, '%02d_tracks.csv' % file_id),
+                                scene_id='1-%02d' %file_id, sampling_rate=36, use_kalman=False).data
+      
       im = plt.imread(os.path.join(ind_root, '%02d_background.png'%(file_id)))
 
       # set the easily accessable class vals
-      self._traj_dataframe = ind_dataset.data
+      self._traj_dataframe = ind_dataset
       self._image = im
       self.image_limits = self.img_bound_dict[('ind', str(file_id))]
       self.dataset_name = 'ind'
@@ -130,7 +159,7 @@ class HighLevelSceneLoader():
       # set the easily accessable class vals
       self._traj_dataframe = df_ind_trajectories
       self._image = image_file
-      self.image_limits = self.img_bound_dict[('sdd', str(scene_name)+str(scene_video_id))]
+      # self.image_limits = self.img_bound_dict[('sdd', str(scene_name)+str(scene_video_id))]
       self.dataset_name = 'sdd'
       self.scene_name = str(scene_name) + str(scene_video_id)
   
@@ -143,7 +172,15 @@ class HighLevelSceneLoader():
     return tf.boolean_mask(input_tensor, mask)
 
 
-  def plot_on_image(self, lst_realxy_mats, ms = 3, invert_y = False, save_path = None, ax=None, col_num_dicts=dict(zip(["x", "y"], [0, 1]))):
+  def plot_all_paths(self, ms = 3, save_path = None, ax=None):
+      paths = list(tuple(self.traj_dataframe.groupby(self.df_split_col)))
+      lst_realxy_mats = [path[1][[self.df_x_col, self.df_y_col]].to_numpy() for path in paths]
+      self.plot_on_image(lst_realxy_mats, ms = 3, invert_y = False, save_path = save_path, 
+      ax=ax, col_num_dicts=dict(zip(["x", "y"], [0, 1])), labels=None)
+
+
+  def plot_on_image(self, lst_realxy_mats, ms = 3, invert_y = False, save_path = None, 
+  ax=None, col_num_dicts=dict(zip(["x", "y"], [0, 1])), labels=None):
     ''' Plot a list of xy matrices on top of an image '''
     # Check input types
     if type(col_num_dicts)!= list:
@@ -201,6 +238,9 @@ class HighLevelSceneLoader():
           m_size = ms
         ax.scatter(xy_np[:, col_num_dict['x']], xy_np[:, col_num_dict['y']], s=m_size)
 
+    if not labels is None:
+      ax.legend(labels)
+
     if save_path is not None:
       plt.gcf()
       plt.savefig(save_path)
@@ -228,7 +268,7 @@ class HighLevelSceneLoader():
 
     # assert numpy format
     dest_locs_mat = np.array(dest_locs)  
-    dest_probs_mat = np.array(dest_probs)
+    dest_probs_mat = np.array(np.squeeze(dest_probs))
 
     # pyplot things
     if ax is None:
@@ -245,8 +285,6 @@ class HighLevelSceneLoader():
     num_locs = len(dest_locs_mat)
     sizes = []
     for i in range(num_locs):
-      # x = dest_locs_mat[i, 0]
-      # y = dest_locs_mat[i, 1]
       p = dest_probs[i]
 
       # put in try as NaN is possible ofr unreachable dests
@@ -257,6 +295,8 @@ class HighLevelSceneLoader():
         sizes.append(min_marker_size)
     
     # plot on the figure
+    print(dest_probs.shape)
+    print(dest_locs_mat.shape)
     ax.scatter(dest_locs_mat[:, 0], dest_locs_mat[:, 1], s=sizes)
 
     # save if needed
