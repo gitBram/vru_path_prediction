@@ -41,7 +41,6 @@ def return_batch_accuracy(tensor_1, tensor_2, n=None):
 def remove_padding_vals(array, padding_val = 0.):
     ''' remove the padding zeros from an array '''
     array_c = np.array(array)
-    blka = len(array_c)
     i = 0
     for i in range(len(array_c) - 1, 0, -1):
         if not (array_c[i,0]==padding_val and array_c[i,1]==padding_val):

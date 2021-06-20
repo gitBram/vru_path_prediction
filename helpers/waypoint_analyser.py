@@ -4,6 +4,7 @@
 # interest_point_searcher should only updated necessary cells upon calling 
 
 
+from os import access
 from sklearn.cluster import KMeans
 import pandas as pd
 import math
@@ -11,6 +12,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from skimage.feature import peak_local_max
 import cv2 as cv
+from tqdm import tqdm
+import matplotlib
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
 
 class WaypointAnalyser:
     def __init__(self, df_data, grid_res, grid_limits, look_around_dist, path_id_col = 'agent_id', x_col = 'pos_x', y_col = 'pos_y', index_col = 'index',
@@ -33,7 +38,7 @@ class WaypointAnalyser:
         n_x_cells, n_y_cells = self.n_x_cells, self.n_y_cells
 
         value_matrix = np.zeros(shape=(n_y_cells, n_x_cells))
-        for c_x_ind in range(n_x_cells):
+        for c_x_ind in tqdm(range(n_x_cells)):
             for c_y_ind in range(n_y_cells):
                 cell_lims = self.get_cell_limits((c_x_ind, c_y_ind), self.grid_limits, self.grid_res)
                 points_matrix = self.extract_neighbour_points(cell_lims)
@@ -60,11 +65,11 @@ class WaypointAnalyser:
         print(np.max(value_matrix))
 
         if savepath is not None:
-            self._save_2d_matrix_img(value_matrix, savepath, invert_y=True)
+            self._save_2d_matrix_img(value_matrix, savepath, invert_y=True, axes_labels=["x position [m]", "y position [m]"])
                 
         return value_matrix
 
-    def interest_point_searcher(self, interest_area_matrix, savepath = None, kernel_size = 3, min_dist = 6, thresh_rel = .1):
+    def interest_point_searcher(self, interest_area_matrix, savepath = None, kernel_size = 3, min_dist = 6, thresh_rel = .1, hide_axes=False):
         # set up everything for easy picture saving if required
         if savepath is not None:
             def comb_p_name(path, suffix):
@@ -73,12 +78,13 @@ class WaypointAnalyser:
                 return "%s%s%s%s%s"%(spl[0], '_', suffix, '.', spl[1])
 
         # blur matrix to smooth out information locally
-        kernel = np.ones((3,3),np.float32)/16
+        kernel = np.ones((kernel_size,kernel_size),np.float32)/kernel_size**2
         out_vals_blurred = cv.filter2D(interest_area_matrix,-1,kernel)
         out_vals_blurred_twice = cv.filter2D(out_vals_blurred,-1,kernel)
 
         if savepath is not None:
-            self._save_2d_matrix_img(out_vals_blurred_twice, comb_p_name(savepath, 'int_area'), invert_y=True)
+            self._save_2d_matrix_img(-out_vals_blurred_twice, comb_p_name(savepath, 'int_area'), 
+            axes_labels=["x position [m]", "y position [m]"], hide_axes=hide_axes)
 
         
         # apply Laplacian to get stronger peak effect
@@ -87,13 +93,16 @@ class WaypointAnalyser:
         lapl_blurred = cv.filter2D(lapl,-1,kernel)
 
         if savepath is not None:
-            self._save_2d_matrix_img(lapl_blurred, comb_p_name(savepath, 'lapl_blur'), invert_y=True)
+            self._save_2d_matrix_img(lapl_blurred, comb_p_name(savepath, 'lapl_blur'), 
+            axes_labels=["x position [m]", "y position [m]"], hide_axes=hide_axes)
 
         # find local peaks on laplacian to export as waypoints
-        coordinates_wayp_bl = self._switch_columns(peak_local_max(-lapl_blurred, min_distance=min_dist, threshold_rel=thresh_rel))
+        coordinates_wayp_bl = self._switch_columns(peak_local_max(lapl_blurred, min_distance=min_dist, threshold_rel=thresh_rel))
 
         if savepath is not None:   
-            self._save_2d_matrix_scatter_img(lapl_blurred, coordinates_wayp_bl, comb_p_name(savepath, 'wayps'), invert_y=True)
+            self._save_2d_matrix_scatter_img(lapl_blurred, coordinates_wayp_bl, 
+            comb_p_name(savepath, 'wayps'), axes_labels=["x position [m]", "y position [m]"],
+            hide_axes=hide_axes)
 
         return self.__restore_orig_grid_lims(coordinates_wayp_bl)
 
@@ -204,22 +213,49 @@ class WaypointAnalyser:
 
         return x_min, x_max, y_min, y_max
 
-    def _save_2d_matrix_img(self, matrix, location, invert_y=True):
+    def _save_2d_matrix_img(self, matrix, location, invert_y=True, axes_labels= None, hide_axes=False):
         fig, ax = plt.subplots( nrows=1, ncols=1 )
-        ax.imshow(matrix, cmap='cool', interpolation='nearest')
+        im = ax.imshow(matrix, cmap='cool', interpolation='nearest')
+        # for PCM in ax.get_children():             
+        #     if type(PCM) == matplotlib.image.AxesImage:                 
+        #         break
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad="5%")
+        plt.colorbar(im, ax=cax)
+
         if invert_y:
             ax.invert_yaxis()
         ax.set_aspect('equal', adjustable='box')
-        fig.savefig(location)
 
-    def _save_2d_matrix_scatter_img(self, matrix, scatterpoints, location, invert_y=True):
+
+        if not axes_labels is None:
+            ax.set_xlabel(axes_labels[0])
+            ax.set_ylabel(axes_labels[1])        
+
+        if hide_axes:
+            ax.axis("off")
+        cax.axis("off")
+
+        fig.savefig(location, bbox_inches='tight')
+
+    def _save_2d_matrix_scatter_img(self, matrix, scatterpoints, location, invert_y=True, 
+    axes_labels=None, hide_axes=False):
         fig, ax = plt.subplots( nrows=1, ncols=1 )
         ax.imshow(matrix, cmap='cool', interpolation='nearest')
         ax.scatter(scatterpoints[:,0], scatterpoints[:,1], c='yellow')
         if invert_y:
             ax.invert_yaxis()
         ax.set_aspect('equal', adjustable='box')
-        fig.savefig(location)
+
+        if not axes_labels is None:
+            ax.set_xlabel(axes_labels[0])
+            ax.set_ylabel(axes_labels[1])
+
+        if hide_axes:
+            plt.axis("off")
+
+        fig.savefig(location,bbox_inches='tight')
 
     @property
     def n_x_cells(self):

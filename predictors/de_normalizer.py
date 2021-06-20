@@ -64,23 +64,23 @@ class DataDeNormalizer():
         data_dict_c = dict(data_dict)
         xy_key = "in_xy"
         data_dict_c[xy_key] = self.scale_tensor(data_dict_c[xy_key], action, "in")
-        if "all_points" in data_dict_c:
-            locations = data_dict_c["all_points"][:, :, 0:2]
+
+        prob_tensors_keys = ["all_points", "all_destinations", "n_points", "n_destinations",
+                             "all_destinations_after", "all_points_after", "n_points_after"]
+        for prob_tensor_key in prob_tensors_keys:
+          if prob_tensor_key in data_dict_c:
+            locations = data_dict_c[prob_tensor_key][:, :, 0:2]
             locations = self.scale_tensor(locations, action, "in", dict(zip(["pos_x", "pos_y"],[0,1])))
-            probs = tf.expand_dims(data_dict_c["all_points"][:,:,2],axis=-1)
-            data_dict_c["all_points"] = tf.concat(
+            probs = tf.expand_dims(data_dict_c[prob_tensor_key][:,:,2],axis=-1)
+            data_dict_c[prob_tensor_key] = tf.concat(
                 [locations, probs], 
                 axis=-1)
-        if "all_destinations" in data_dict_c:
-            locations = data_dict_c["all_destinations"][:, :, 0:2]
-            locations = self.scale_tensor(locations, action, "in", dict(zip(["pos_x", "pos_y"],[0,1])))
-            probs = tf.expand_dims(data_dict_c["all_destinations"][:,:,2],axis=-1)
-            data_dict_c["all_destinations"] = tf.concat(
-                [locations, probs], 
-                axis=-1)
+ 
+        # data_dict_c["labels"] = self.scale_tensor(data_dict_c["labels"], action, "in", dict(zip(["pos_x", "pos_y"],[0,1])))
 
         return data_dict_c
-
+        
+    @tf.autograph.experimental.do_not_convert
     def scale_tensor(self, data, action, in_out, custom_scale_dict = None):
         ''' 
         (De)Normalize a matrix of TF data. Ordered col list is used to retrieve the 
@@ -168,17 +168,19 @@ class DataDeNormalizer():
 
         std_list = [x if x is not None else 0. for x in std_list]
 
-        return std_list
+        return tf.constant(std_list, dtype=tf.float32)
 
+    @tf.function
     def quick_xy_normer(self, d):
-        mu_tensor = tf.constant([self.scale_dict["pos_x"]["mu"], self.scale_dict["pos_y"]["mu"]], dtype=tf.float64)
-        std_tensor = tf.constant([self.scale_dict["pos_x"]["std"], self.scale_dict["pos_y"]["std"]], dtype=tf.float64)
+        d_c = dict(d)
+        mu_tensor = tf.constant([self.scale_dict["pos_x"]["mu"], self.scale_dict["pos_y"]["mu"]], dtype=tf.float32)
+        std_tensor = tf.constant([self.scale_dict["pos_x"]["std"], self.scale_dict["pos_y"]["std"]], dtype=tf.float32)
     
-        normed_data = d["xy"]
+        normed_data = d_c["xy"]
         normed_data = tf.map_fn(lambda line: tf.math.subtract(line,mu_tensor), normed_data)
         normed_data = tf.map_fn(lambda line: tf.math.divide(line,std_tensor), normed_data)
-        d["xy"] = normed_data
-        return d
+        d_c["xy"] = normed_data
+        return d_c
 
     # Getters and Setters
     @property

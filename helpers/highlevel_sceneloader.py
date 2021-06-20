@@ -172,15 +172,17 @@ class HighLevelSceneLoader():
     return tf.boolean_mask(input_tensor, mask)
 
 
-  def plot_all_paths(self, ms = 3, save_path = None, ax=None):
+  def plot_all_paths(self, ms = 3, save_path = None, ax=None, hide_axes=False):
       paths = list(tuple(self.traj_dataframe.groupby(self.df_split_col)))
       lst_realxy_mats = [path[1][[self.df_x_col, self.df_y_col]].to_numpy() for path in paths]
       self.plot_on_image(lst_realxy_mats, ms = 3, invert_y = False, save_path = save_path, 
-      ax=ax, col_num_dicts=dict(zip(["x", "y"], [0, 1])), labels=None)
+      ax=ax, col_num_dicts=dict(zip(["x", "y"], [0, 1])), labels=None,
+      axes_labels=["x position [m]", "y position [m]"], hide_axes=hide_axes)
 
 
   def plot_on_image(self, lst_realxy_mats, ms = 3, invert_y = False, save_path = None, 
-  ax=None, col_num_dicts=dict(zip(["x", "y"], [0, 1])), labels=None):
+  ax=None, col_num_dicts=dict(zip(["x", "y"], [0, 1])), labels=None, colors=None, title=None, 
+  axes_labels=None, hide_axes=False):
     ''' Plot a list of xy matrices on top of an image '''
     # Check input types
     if type(col_num_dicts)!= list:
@@ -236,14 +238,24 @@ class HighLevelSceneLoader():
           m_size = ms[i]
         else:
           m_size = ms
-        ax.scatter(xy_np[:, col_num_dict['x']], xy_np[:, col_num_dict['y']], s=m_size)
+        ax.scatter(xy_np[:, col_num_dict['x']], xy_np[:, col_num_dict['y']], s=m_size, c=colors)
 
     if not labels is None:
       ax.legend(labels)
 
+    if not axes_labels is None:
+      ax.set_xlabel(axes_labels[0])
+      ax.set_ylabel(axes_labels[1])
+    
+    if not title is None:
+      plt.gcf().suptitle(title)    
+
+    if hide_axes:
+      plt.axis("off")
+
     if save_path is not None:
       plt.gcf()
-      plt.savefig(save_path)
+      plt.savefig(save_path, bbox_inches='tight')
     return None
 
   def add_circles(self, centres_mat, radius, ax = None, save_path = None, color='b'):
@@ -295,8 +307,6 @@ class HighLevelSceneLoader():
         sizes.append(min_marker_size)
     
     # plot on the figure
-    print(dest_probs.shape)
-    print(dest_locs_mat.shape)
     ax.scatter(dest_locs_mat[:, 0], dest_locs_mat[:, 1], s=sizes)
 
     # save if needed

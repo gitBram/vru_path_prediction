@@ -77,7 +77,7 @@ class TFDataSet():
         l_comb_with_id = sorted(l_comb_with_id)
         l_comb_with_id.append(id_col_name)        
 
-        data = dataframe.copy()[l_comb_with_id]
+        data = dataframe.copy()[l_comb_with_id]        
 
         headers_id_dropped = data.columns.to_list() # in order to keep column ids after id column drop
         headers_id_dropped.remove(id_col_name)
@@ -94,6 +94,15 @@ class TFDataSet():
         in_dict = dict(zip(l_in, list(range(len(l_in))))) 
         out_dict = dict(zip(l_out, list(range(len(l_out))))) 
 
+        # Set everything up for data normalization
+        normer = None
+        if normalize_data:
+            normer = DataDeNormalizer.from_dataframe(data, scale_list, in_dict, out_dict) # no cheating! Only use train for normalization
+        
+        # for norming
+        # data = normer.scale_dataframe(data, scale_list, "normalize") # CANNOT NORM YET --> GRAPH ANALYSIS STILL TO HAPPEN
+        noise_std_vect = normer.generate_noise_std_vect(0.3, ["pos_x","pos_y"], ["pos_x", "pos_y"])
+
         # Train Val Test
         n_rows = data.shape[0]
         n_train, n_val = int(train_perc*n_rows), int(val_perc*n_rows)
@@ -102,18 +111,12 @@ class TFDataSet():
         df_train = data.iloc[:n_train, :]
         df_val = data.iloc[n_train:(n_train+n_val), :]
         df_test = data.iloc[(n_train+n_val):, :]
-
-        # Set everything up for data normalization
-        normer = None
-        if normalize_data:
-            normer = DataDeNormalizer.from_dataframe(df_train, scale_list, in_dict, out_dict) # no cheating! Only use train for normalization
-        
         # if path analysis was not given, do it
         if ds_creation_dict is None:
             ds_creation_dict = dict()
-            ds_creation_dict["train"] = cls.__df_to_ds_dict(cls, df_train, id_col_name, label_length, in_col_nums, out_col_nums, do_shuffle, shuffle_buffer_size, batch_size, seq_in_length, seq_stride, noise_std, n_repeats=n_repeats, extra_features_dict=extra_features_dict, graph=graph, normer=normer, scale_list=scale_list)
-            ds_creation_dict["test"] = cls.__df_to_ds_dict(cls, df_test, id_col_name, label_length, in_col_nums, out_col_nums, do_shuffle, shuffle_buffer_size, batch_size, seq_in_length, seq_stride, extra_features_dict=extra_features_dict, graph=graph, normer=normer, scale_list=scale_list)
-            ds_creation_dict["val"] = cls.__df_to_ds_dict(cls, df_val, id_col_name, label_length, in_col_nums, out_col_nums, do_shuffle, shuffle_buffer_size, batch_size, seq_in_length, seq_stride, noise_std, n_repeats=n_repeats, extra_features_dict=extra_features_dict, graph=graph, normer=normer, scale_list=scale_list)
+            ds_creation_dict["train"] = cls.__df_to_ds_dict(cls, df_train, id_col_name, label_length, seq_in_length, seq_stride, extra_features_dict=extra_features_dict, graph=graph, normer=normer)
+            ds_creation_dict["test"] = cls.__df_to_ds_dict(cls, df_test, id_col_name, label_length, seq_in_length, seq_stride, extra_features_dict=extra_features_dict, graph=graph, normer=normer)
+            ds_creation_dict["val"] = cls.__df_to_ds_dict(cls, df_val, id_col_name, label_length, seq_in_length, seq_stride, extra_features_dict=extra_features_dict, graph=graph, normer=normer)
         # save the creation dicts for later use
             with open(save_folder, 'wb') as handle:
                 pickle.dump(ds_creation_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -121,18 +124,17 @@ class TFDataSet():
         ds_dict = dict()
 
         ds_dict["train"], size_dict = cls.ds_dict_to_ds(cls, ds_creation_dict["train"], normer, noise_std, 
-        do_shuffle, shuffle_buffer_size, seq_in_length, seq_stride, batch_size, n_repeats, label_length, in_col_nums, out_col_nums)
+        do_shuffle, shuffle_buffer_size, batch_size, n_repeats, label_length, in_col_nums, out_col_nums, noise_std_vect)
         ds_dict["test"], _ = cls.ds_dict_to_ds(cls, ds_creation_dict["test"], normer, noise_std, 
-        do_shuffle, shuffle_buffer_size, seq_in_length, seq_stride, batch_size, n_repeats, label_length, in_col_nums, out_col_nums)
+        do_shuffle, shuffle_buffer_size, batch_size, n_repeats, label_length, in_col_nums, out_col_nums, noise_std_vect)
         ds_dict["val"], _ = cls.ds_dict_to_ds(cls, ds_creation_dict["val"], normer, noise_std, 
-        do_shuffle, shuffle_buffer_size, seq_in_length, seq_stride, batch_size, n_repeats, label_length, in_col_nums, out_col_nums)
+        do_shuffle, shuffle_buffer_size, batch_size, n_repeats, label_length, in_col_nums, out_col_nums, noise_std_vect)
 
         return cls(ds_dict, batch_size, seq_in_length, label_length, train_perc, test_perc, val_perc,
         in_dict, out_dict, x_col_name, y_col_name, do_shuffle, size_dict, normer=normer, scale_cols=scale_list)
 
-    def __df_to_ds_dict(self, df, id_col_name, lbl_length, in_col_nums, out_col_nums, shuffle, 
-    shuffle_buffer_size, batch_size, seq_in_length, seq_stride, noise_std=None, n_repeats=None, 
-    extra_features_dict=None, graph=None, normer=None, scale_list = None):
+    def __df_to_ds_dict(self, df, id_col_name, lbl_length, seq_in_length, seq_stride, 
+    extra_features_dict=None, graph=None, normer=None):
         ''' 
         Go from a pd dataframe to a TF dataset 
         If seq_in_length is None or seq_stride is None => ds with fixed length created, otherwise zero padded
@@ -156,6 +158,7 @@ class TFDataSet():
         ds_pickle_list = []
         if not type(seq_in_length) == list:
             seq_in_length = [seq_in_length]
+
         
         for in_length in seq_in_length:
             for i in tqdm(df_c[id_col_name].unique()):
@@ -282,80 +285,102 @@ class TFDataSet():
                                 ds_dict[extra_f] = f_result
                             # Save the shape of the feature for setting up the neural network
                             extra_f_sizes[extra_f] = ds_dict[extra_f].shape
-            
+
+                if not normer is None:
+                    ds_dict["xy"] = normer.scale_tensor(ds_dict["xy"], "normalize", "in")
+                    
                 ds_pickle_list.append(ds_dict)
 
         return ds_pickle_list
 
     def ds_dict_to_ds(self, ds_dicts_list, normer, noise_std, 
-    shuffle, shuffle_buffer_size, seq_in_length, seq_stride, batch_size, n_repeats,
-    lbl_length, in_col_nums, out_col_nums):
+    shuffle, shuffle_buffer_size, batch_size, n_repeats,
+    lbl_length, in_col_nums, out_col_nums, noise_std_vector):
         size_dict = dict()
         ex_ds_dict = ds_dicts_list[0]
         for key in list(ex_ds_dict.keys()):
             size_dict[key] = ex_ds_dict[key].shape
+        
+        # function for adding noise
+        @tf.function
+        def add_noise(x):  
+          x_c = dict(x)
+          if noise_std is not None:              
+              noise = tf.random.normal(shape=x_c["xy"].shape, mean=0., stddev=noise_std, dtype=tf.float32)
+              x_c["xy"] = x_c["xy"] + noise
+              return x
+
+        # function for norming data
+        mu_tensor = tf.constant([normer.scale_dict["pos_x"]["mu"], normer.scale_dict["pos_y"]["mu"]], dtype=tf.float32)
+        std_tensor = tf.constant([normer.scale_dict["pos_x"]["std"], normer.scale_dict["pos_y"]["std"]], dtype=tf.float32)       
+        @tf.function
+        def my_quick_xy_normer(d):
+            d_c = dict(d)        
+            normed_data = d_c["xy"]
+            normed_data = tf.map_fn(lambda line: tf.math.subtract(line,mu_tensor), normed_data)
+            normed_data = tf.map_fn(lambda line: tf.math.divide(line,std_tensor), normed_data)
+            d_c["xy"] = normed_data
+            return d_c
+
+        # second function for norming data
+            
+        def add_noise2(d):     
+          if noise_std_vector is not None:  
+            d_c=dict(d)         
+            noise = tf.random.normal(shape=d_c["xy"].shape, mean=0., stddev=noise_std_vector, dtype=d_c["xy"].dtype)
+            d_c["xy"] = d_c["xy"] + noise
+            return d_c          
 
         ds = None
         for ds_dict in ds_dicts_list:
             # Scaling if needed
-            '''
-            # Add noise if wanted
-            if noise_std_vector is not None:
-                def add_noise(x):                
-                    noise = tf.random.normal(shape=x["xy"].shape, mean=0., stddev=noise_std_vector, dtype=x["xy"].dtype)
-                    x["xy"] = x["xy"] + noise
-                    return x
-                path_ds = path_ds.map(add_noise)
-            '''
             for key in ds_dict.keys():
-                ds_dict[key]=tf.cast(ds_dict[key], dtype=tf.float64)
+                ds_dict[key]=tf.cast(ds_dict[key], dtype=tf.float32)
 
             path_ds = tf.data.Dataset.from_tensors(ds_dict)  
-
+            
             # Add noise if wanted
-            if noise_std is not None:
-                def add_noise(x):                
-                    noise = tf.random.normal(shape=x["xy"].shape, mean=0., stddev=noise_std, dtype=x["xy"].dtype)
-                    x["xy"] = x["xy"] + noise
-                    return x
-                path_ds = path_ds.map(add_noise)
-
+            '''
+            path_ds = path_ds.map(add_noise)
+            '''
+            path_ds = path_ds.map(add_noise2)
+            
             # Norm if needed
+            '''
             if normer is not None:
-                path_ds = path_ds.map(lambda x: normer.quick_xy_normer(x))  
+                path_ds = path_ds.map(lambda x: my_quick_xy_normer(x))  
+            '''
 
             if ds is not None:
                 # Add to dataset
-                print("ok")
                 ds = ds.concatenate(path_ds)
             else:
-                print("oops")
                 # Add first ds entry
                 ds = path_ds
 
         # Let's remove the first dimension (*random*,timesteps, feature_num) to (timesteps, feature_num)
 
         ds = ds.flat_map(lambda x: tf.data.Dataset.from_tensor_slices(x))                
-
+        
         def extract_columns(d):           
             d["in_xy"]= tf.transpose(tf.gather(tf.transpose(d["xy"][:-lbl_length]),in_col_nums))
             out = tf.transpose(tf.gather(tf.transpose(d["xy"][-lbl_length:]),out_col_nums))
             del d["xy"]
             return d, out
-
+        
         ds = ds.map(lambda d: extract_columns(d))
-
+        
         if shuffle == True: 
             ds = ds.shuffle(buffer_size=shuffle_buffer_size) 
 
-
-
         # if not (type(seq_in_length)==list or seq_stride is None):
-        #     ds = ds.batch(batch_size, drop_remainder=True)
+        #     
+        ds = ds.batch(batch_size)
         # else:
-        ds = ds.padded_batch(batch_size, padding_values = tf.constant(-100.,dtype=tf.float64))#.prefetch(1)
 
-        return ds.repeat(n_repeats), size_dict
+        # ds = ds.padded_batch(batch_size, padding_values = tf.constant(-100.,dtype=tf.float64))
+
+        return ds.repeat(n_repeats).prefetch(10), size_dict
 
     def __get_n_point_prob_tensor(self, path, normer, graph, n, points_or_dests = "points"):
         # sanity check
@@ -454,6 +479,16 @@ class TFDataSet():
             # If there has not been any scaling, 
             return (input, output), (input, output)
 
+    def remove_padding_vals(array, padding_val = 0.):
+        ''' remove the padding zeros from an array '''
+        array_c = np.array(array)
+        i = 0
+        for i in range(len(array_c) - 1, 0, -1):
+            if not (array_c[i,0]==padding_val and array_c[i,1]==padding_val):
+                break    
+
+        return array_c[:i+1]
+
     def example_dict(self, ds_type, xy_key):
         '''
         Like example function, but if input is specified as a dict
@@ -461,7 +496,6 @@ class TFDataSet():
         # Quick sanity check
         if not ds_type in list(self.tf_ds_dict.keys()):
             raise ValueError("Key %s not in dataset dict"%(ds_type))        
-        
         input, output = next(iter(self.tf_ds_dict[ds_type]))
         if self.normer is not None:
             # If there has been scaling, return both unscaled and scaled version
@@ -516,6 +550,7 @@ class TFDataSet():
         d['y']=self.out_dict[self.y_col_name]
         return d
         
+
     
 
 def __test():

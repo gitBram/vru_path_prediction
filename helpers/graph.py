@@ -248,10 +248,13 @@ class Graph():
         for i in range(1, len(path)):
             start_node = path[i-1]
             end_node = path[i]
-            total_prob *= self.__calculate_prob_n_steps(start_node, end_node, 1, 1)
+            start_id = self.points_indices_dict[start_node]
+            end_id = self.points_indices_dict[end_node]
+            total_prob *= self.trans_mat_normed[start_id, end_id]
+            # total_prob *= self.__calculate_prob_n_steps(start_node, end_node, 1, 1)
         return total_prob
 
-    def calculate_prob(self, start_node, end_node, detour_factor = 0.2, dist_calc_method = 'matrices'):
+    def calculate_prob(self, start_node, end_node, dist_calc_method = 'matrices'):
         ''' using the graph, calculate probability of traveling from start to end node '''
         # make sure that given points are existing
         assert start_node in self.points_names
@@ -682,39 +685,8 @@ class Graph():
             count = np.sum(self.trans_mat[:, id])
 
             d[name] = int(count)
-        return d
-            
+        return d            
 
-# Test function for module  
-def _test():
-    ''' test graph class ''' 
-    wayp_dict = {'w1': [1.,1.], 'w2': [2., 1.], 'w3': [3., 2.], 'w4': [3., 0.]}
-    dest_dict = {'d1': [0.,1.], 'd2': [4., 2.], 'd3': [4., 0.]}
-    threshold = .5
-    prune_threshold = .05
-    g = Graph(wayp_dict, dest_dict, threshold, prune_threshold)
-    path1 = np.array([[0., 1.], [1., 1.], [2.,1.], [3.,2.], [4.,2.]])
-    path2 = np.array([[0., 1.], [1., 1.], [2.,1.], [3.,0.], [4.,0.]])
-    path3 = np.array([[0., 1.], [1., 1.], [2.,1.], [3.,0.], [4.,0.]])
-    path4 = np.array([[4.,0.], [3.,0.], [2.,1.], [1., 1.], [0., 1.]])
-    a,l = g.analyse_full_signal(path1, add_to_trans_mat = True)
-    a,l = g.analyse_full_signal(path2, add_to_trans_mat = True)
-    a,l = g.analyse_full_signal(path3, add_to_trans_mat = True)
-    a,l = g.analyse_full_signal(path4, add_to_trans_mat = True)
-    # print("Locations:")
-    # print(a)
-    # print(l)
-    g.recalculate_trans_mat_dependencies()
-    my_graph = g.create_graph(.05)
-    g.visualize_graph(my_graph, './data/images/graph.png', g_type='relative')
-
-    g.calculate_destination_probs(['w1'])
-    # print(g.calculate_prob('d1', 'd1'))
-    ''' Test for calculate_path_prob '''
-    assert g.calculate_path_prob(['d1', 'w1', 'w2', 'w3']) == 1*.75*.25
-
-
-    return None
 
 if __name__ == '__main__':
     _test()

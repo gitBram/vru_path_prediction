@@ -24,23 +24,31 @@ class DLTrainer:
         self._num_out_steps = None
 
 
-    def compile_and_fit(self, ds_creator_inst, save_path = None):
+    def compile_and_fit(self, ds_creator_inst, save_path = None, test_fit = False):
+        if test_fit:
+            max_epochs = 1
+        else:
+            max_epochs = self.max_epochs
+
         dataset_dict = ds_creator_inst.tf_ds_dict
         early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss',
                                                         patience=self._patience,
                                                         mode='min',
                                                         restore_best_weights=True)
+        
+        checkpoint = tf.keras.callbacks.ModelCheckpoint(save_path, monitor='val_loss', verbose=1,
+        save_best_only=True, mode='auto', period=1, save_weights_only=True)
 
         self.model.compile(loss=self._loss_function,
                     optimizer=self._optimizer,
                     metrics=[self._metric])
-        cb = [early_stopping]
+        cb = [early_stopping, checkpoint]
 
-        history = self.model.fit(dataset_dict['train'], epochs=self.max_epochs,
+        history = self.model.fit(dataset_dict['train'], epochs=max_epochs,
                             validation_data=dataset_dict['val'],
                             callbacks=cb)
-        if save_path is not None:
-            self.model.save_weights(save_path)        
+        # if save_path is not None:
+        #     self.model.save_weights(save_path)        
 
         return history
 
@@ -154,7 +162,6 @@ class DLTrainer:
 
             # drop the n first rows if input has to stay same length
             if fixed_len_input:
-                print(input_dict_c["in_xy"])
                 input_dict_c["in_xy"] = input_dict_c["in_xy"][:, -self.num_in_steps:, :]
 
         return assembled_output
@@ -250,7 +257,8 @@ class DLTrainer:
         # add inputs for the extra features
         concat_list = [m]
         if "all_destinations" in extra_features:
-            all_destinations = Input(shape=(8,3), name="all_destinations")
+
+            all_destinations = Input(shape=(9,3), name="all_destinations")
             print(all_destinations)
             n = Flatten()(all_destinations)
             concat_list.append(n)
