@@ -56,7 +56,8 @@ def test():
     v = np.random.random((6,2))
     tog = np.concatenate([v,z], axis=0)
     print(tog)
-    print(remove_zeros(tog))
+
+
     return None
 if __name__ == '__main__':
     test()

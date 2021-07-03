@@ -68,11 +68,26 @@ class Graph():
 
         return return_lists
 
-    def analyse_full_signal(self, path, add_to_trans_mat):
+    def analyse_full_signal(self, path, add_to_trans_mat, allow_out_of_threshold = False):
         ''' return a list of waypoints/destinations for a list of location measurements. For each 
         measurement, closest waypoint within threshold range is added. No repetitions 
-        of same waypoint allowed. '''
+        of same waypoint are allowed. 
+        
+        If allow_out_of_threshold == True, the way point closest to the last point is 
+        returned if no waypoints are detected at all '''
+        # make sure it's a numpy array
+        path = np.array(path)
+
+        if len(path.shape) >= 3:
+            path = np.squeeze(path)
+        if len(path.shape) == 1:
+            path = np.expand_dims(path, axis=0)
+
+        assert len(path.shape) == 2
+
+        #get length of path
         path_len = len(path)
+        
         # get distance signals
         dist_sig_dict = self.__get_dist_signal_dict(path)
         dist_sigs = np.array(list(dist_sig_dict.values()))
@@ -89,8 +104,8 @@ class Graph():
         minima = dist_sigs[min_dist_ids, list(range(len(min_dist_ids)))]
         close_enough = minima < self.dist_threshold
 
-        if len(close_enough) < 1:
-            return np.array([]) 
+        # if len(close_enough) < 1:
+        #     return np.array([]) 
 
         accessed_points_f = np.array(accessed_points)[close_enough]
 
@@ -109,7 +124,10 @@ class Graph():
             return wayp_names, wayp_locs
         except:
             warnings.warn("Unused path in transition matrix due to not reaching two waypoints", Warning)
-            return [], []        
+            if allow_out_of_threshold:
+                return [accessed_points[-1]], [self.__point_names_to_locs([accessed_points[-1]])]
+            else:
+                return [], []        
 
     def __point_names_to_locs(self, point_names):
         locs = []
@@ -518,8 +536,11 @@ class Graph():
     def __get_dist_signal_dict(self, path):
         ''' for a path, get the distance to all nodes on each time step, later used to find the closest adjacent node '''
         ''' OUT: axis 0: path_num, axis 1: waypoints '''
+        # print(path)
+        path = np.squeeze(path)
         if len(path.shape) == 1:
             path = np.expand_dims(path, 0)
+        
         nodes_locations = np.array(list(self.points_dict.values()))
         dist_sig = self.__calculate_node_distances(path, nodes_locations)
         dist_sig_dict = dict(zip(self.points_dict.keys(), dist_sig.T))

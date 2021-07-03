@@ -187,17 +187,28 @@ class TFDataSet():
 
                 ds_dict["xy"]=path_np_w
 
-                # include the labels full future path for later analysis
+                # include the full input and output path for later analysis
+                #   Create the lists
                 label_list = []
                 for i in range(n_frames):
                     label_list.append(path_np[in_length+i:,:])
+                full_input_list = []
+                for i in range(n_frames):
+                    full_input_list.append(path_np[:in_length+i,:])
 
+                #   Add to dict
                 ds_dict["labels"]=tf.ragged.constant(label_list).to_tensor()
                 lbl_len = ds_dict["labels"].shape[0]
-                the_type = ds_dict["labels"].dtype
+                the_type_out = ds_dict["labels"].dtype
+
+                ds_dict["input_labels"]=tf.ragged.constant(full_input_list).to_tensor()
+                lbl_len = ds_dict["input_labels"].shape[0]
+                the_type_in = ds_dict["input_labels"].dtype
 
                 # if error is raised here, give it a bigger max label length
-                ds_dict["labels"] = tf.concat([ds_dict["labels"], tf.zeros([lbl_len, max_label_len-lbl_len, 2], dtype=the_type)], axis=-2)
+                ds_dict["labels"] = tf.concat([ds_dict["labels"], tf.zeros([lbl_len, max_label_len-lbl_len, 2], dtype=the_type_out)], axis=-2)
+                ds_dict["input_labels"] = tf.concat([ds_dict["input_labels"], tf.zeros([lbl_len, max_label_len-lbl_len, 2], dtype=the_type_in)], axis=-2)
+
 
                 # include the wanted extra features
                 extra_f_sizes = None

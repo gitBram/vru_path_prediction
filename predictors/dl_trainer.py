@@ -7,6 +7,7 @@ from keras.layers.core import Lambda
 from keras import backend as K
 from keras import Model
 from keras.layers import Dense, LSTM, Reshape, InputLayer, Flatten, Concatenate, Dropout, Concatenate, Input
+from math import ceil
 
 class DLTrainer:
     def __init__(self, max_epochs, patience, loss_function = tf.losses.MeanSquaredError(), optimizer = tf.keras.optimizers.Adam(), metric = tf.metrics.MeanAbsoluteError()):
@@ -46,9 +47,7 @@ class DLTrainer:
 
         history = self.model.fit(dataset_dict['train'], epochs=max_epochs,
                             validation_data=dataset_dict['val'],
-                            callbacks=cb)
-        # if save_path is not None:
-        #     self.model.save_weights(save_path)        
+                            callbacks=cb)    
 
         return history
 
@@ -139,11 +138,21 @@ class DLTrainer:
 
         return composed_output, composed_output_s  
 
-    def predict_repetitively_dict(self, input_dict, scale_input_tensor, num_repetitions, fixed_len_input):
+    def predict_repetitively_dict(self, input_dict, scale_input_tensor, num_out_predictions, fixed_len_input):
         input_dict_c = dict(input_dict)
+        '''
+        Prediction based on input dict
+        scale_input_tensor sets whether the input tensor still needs to be scaled
+        num_out_predictions is number of outputs (approx)
+        fixed_len_input sets whether network only receives fixed length input
+        '''
         # Make sure input tensor is 3d 
         if len(input_dict_c["in_xy"].shape) <= 2:
             input_dict_c["in_xy"] = tf.expand_dims(input_dict_c["in_xy"], axis=0)
+
+        # Calculate number of repetitions based on number of wanted points and number of points predicted each prediction
+        # TODO: still got to fix number of steps predicted if possible to divide
+        num_repetitions = ceil(num_out_predictions/self.num_out_steps)
 
         # Get type same with output of model (float instead of double) to be able to concat
         input_dict_c["in_xy"] = tf.cast(input_dict_c["in_xy"], dtype=tf.float32)

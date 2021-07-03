@@ -274,13 +274,14 @@ class HighLevelSceneLoader():
 
   def plot_dest_probs(self, dest_locs, dest_probs, min_marker_size, max_marker_size, ax = None, save_path = None):
     ''' for plotting the destination probabilities, visible by the size of the probability '''
+    # assert numpy format
+    dest_locs_mat = np.array((dest_locs))
+    dest_probs_mat = np.array((dest_probs))
     # basic checks
-    assert len(dest_locs) == len(dest_probs) 
+    assert len(dest_locs_mat) == len(dest_probs_mat) 
     assert max_marker_size > min_marker_size 
 
-    # assert numpy format
-    dest_locs_mat = np.array(dest_locs)  
-    dest_probs_mat = np.array(np.squeeze(dest_probs))
+
 
     # pyplot things
     if ax is None:
