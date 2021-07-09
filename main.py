@@ -9,7 +9,8 @@ import pickle
 from helpers.graph import Graph
 import numpy as np
 
-
+import warnings
+warnings.filterwarnings('ignore')
 
 def main():
     ''' set some parameters '''
@@ -18,11 +19,17 @@ def main():
     DENSE_LAYER_SIZE = 128
     NUM_LSTM_LAYERS = 2
     NUM_DENSE_LAYERS = 2
-    VARIABLE_INPUT_LENGTH = False
+    VARIABLE_INPUT_LENGTH = True
 
     # Dataset
-    SEQ_IN_LEN = 5
-    SEQ_OUT_LEN = 3
+    SEQ_IN_LEN = 3
+    SEQ_OUT_LEN = 5
+    NOISE_STD = .3
+    N_REPEATS = 1
+
+    BATCH_SIZE = 1
+    LENGTH_STRIDE = 2
+
 
     # Training parameters
     MAX_EPOCHS = 100
@@ -45,7 +52,7 @@ def main():
     sys.path.append(opentraj_root) # add package to pythonpath
 
     scene_data = HighLevelSceneLoader(p_img_bounds, p_dest_locs)
-    scene_data.load_ind(root_datasets, 7, 17)
+    scene_data.load_ind(root_datasets, 7)
 
 
     ''' create the graph instance '''    
@@ -64,11 +71,13 @@ def main():
     }
 
     # Load data in order to not need to do calculations again
-    with open("data/pickle/ds_creation_d/all_f_fixed_length/ds_7to17_inputLabels.pickle", 'rb') as handle:
+    with open("data/pickle/ds_creation_d/bs1.pickle", 'rb') as handle:
         my_ds_creation_dict = pickle.load(handle)
 
-    my_ds = TFDataSet.init_as_fixed_length(scene_data.traj_dataframe, graph=g, scale_list=["pos_x", "pos_y"], seq_in_length=SEQ_IN_LEN, label_length=SEQ_OUT_LEN, seq_stride=1,
-    extra_features_dict=extra_features_dict, ds_creation_dict=my_ds_creation_dict, noise_std=.15)
+    my_ds = TFDataSet.init_as_fixed_length(scene_data.traj_dataframe, graph=g, var_in_len=VARIABLE_INPUT_LENGTH, length_stride=LENGTH_STRIDE,
+    scale_list=["pos_x", "pos_y"], seq_in_length=SEQ_IN_LEN, label_length=SEQ_OUT_LEN,
+    extra_features_dict=extra_features_dict, noise_std=NOISE_STD, 
+    n_repeats=N_REPEATS, batch_size=BATCH_SIZE, ds_creation_dict=my_ds_creation_dict) #save_folder = "data/pickle/ds_creation_d/bs1.pickle"
 
     ''' time for some model training '''
     # BASIC TRAINER
@@ -76,15 +85,17 @@ def main():
     my_trainer.LSTM_one_shot_predictor_named_i(my_ds, LSTM_LAYER_SIZE, DENSE_LAYER_SIZE, 
     NUM_LSTM_LAYERS, NUM_DENSE_LAYERS, extra_features=["all_destinations"], var_time_len=VARIABLE_INPUT_LENGTH)
 
-    save_path = "data/model_weights/checkpoints/cp1.ckpt"
+    save_path = "data/model_weights/checkpoints/cp5/cp5.ckpt"
 
-    try:
-        # first do one epoch of training in order to initialize weights
-        my_trainer.compile_and_fit(my_ds, 'data/model_weights/checkpoints/bin/cp1.ckpt', test_fit=True)
-        my_trainer.load_weights(save_path)
-    except:
-        my_trainer.compile_and_fit(my_ds, save_path)
-
+    my_trainer.compile_and_fit(my_ds, 'data/model_weights/checkpoints/bin/test_cp1.ckpt', test_fit=True)
+    my_trainer.load_weights(save_path)
+    # try:
+    #     # first do one epoch of training in order to initialize weights
+    #     my_trainer.compile_and_fit(my_ds, 'data/model_weights/checkpoints/bin/test_cp1.ckpt', test_fit=True)
+    #     my_trainer.load_weights(save_path)
+    # except:
+    #     my_trainer.compile_and_fit(my_ds, save_path)
+        
     ''' time for some model predictions '''
     my_predictor = extended_predictor(g, my_trainer, 1)
     
@@ -103,10 +114,36 @@ def main():
 
     # Basic prediction, but repeated (one at a time)
     #PROBLEM: input is scaled
-    assembled_output = my_predictor.predict_to_destinations(unscaled_ex[0], 10, 1, True)
+    assembled_output1, destination_list1, dest_prob_dict = my_predictor.predict_to_destinations(unscaled_ex[0], 10, 1, VARIABLE_INPUT_LENGTH)
+    assembled_output2, destination_list2, dest_prob_dict = my_predictor.predict_to_destinations(unscaled_ex[0], 20, 1, VARIABLE_INPUT_LENGTH)
     # Epistemic uncertainty prediction
     # YET TO COME
     
+    for i in range(9):
+        fig1, ax1 = plt.subplots()
+        scene_data.plot_on_image([unscaled_ex[0]["input_labels"], unscaled_ex[0]["labels"], assembled_output1[i]], 
+        save_path='data/images/final_notebook/example_prediction'+str(i)+'.png', ms = [6, 1, 6], ax=ax1,
+        col_num_dicts=[my_ds.generalised_in_dict, my_ds.generalised_out_dict,my_ds.generalised_out_dict], axes_labels=["input", "output", "prediction"])
+        
+        dest_locs = destination_list1[i][:, :, 0:2]
+        dest_probs = destination_list1[i][:, :, 2:3]
+        
+        scene_data.plot_dest_probs(dest_locs[0], dest_probs[0], 2, 200,
+        ax = ax1)
+
+    for i in range(9):
+        fig1, ax1 = plt.subplots()
+        scene_data.plot_on_image([unscaled_ex[0]["input_labels"], unscaled_ex[0]["labels"], assembled_output2[i]], 
+        save_path='data/images/final_notebook/example_prediction_long'+str(i)+'.png', ms = [6, 1, 6], ax=ax1,
+        col_num_dicts=[my_ds.generalised_in_dict, my_ds.generalised_out_dict,my_ds.generalised_out_dict], axes_labels=["input", "output", "prediction"])
+        
+        dest_locs = destination_list2[i][:, :, 0:2]
+        dest_probs = destination_list2[i][:, :, 2:3]
+        
+        scene_data.plot_dest_probs(dest_locs[0], dest_probs[0], 2, 200,
+        ax = ax1)
+
+
     # PLOT BASIC PREDICTION
     fig1, ax1 = plt.subplots()
 

@@ -52,18 +52,18 @@ class TFDataSet():
         self.size_dict = size_dict
 
     @classmethod
-    def init_as_fixed_length(cls, dataframe, graph, do_shuffle = True, shuffle_buffer_size = 100,
+    def init_as_fixed_length(cls, dataframe, graph, var_in_len, do_shuffle = True, shuffle_buffer_size = 100,
                         batch_size = 5, normalize_data = True,
-                        label_length = 1, # timesteps to be considered in in/out frame, stride with which data is windowed
+                        label_length = 1, # timesteps to be considered in in/out frame
                         train_perc = .7, test_perc = .2, val_perc = .1,
                         feature_list_in = ['pos_x', 'pos_y'], feature_list_out = ['pos_x', 'pos_y'], # all features that will be in in-/output
                         scale_list = ['pos_x', 'pos_y'], 
                         id_col_name = "agent_id", x_col_name = 'pos_x', y_col_name = 'pos_y',
-                        seq_in_length = None, seq_stride = None, noise_std = None, n_repeats = 1,
+                        seq_in_length = None, length_stride = None, noise_std = None, n_repeats = 1,
                         extra_features_dict = None, 
                         ds_creation_dict = None, save_folder = None):
         '''
-        Create fixed length dataset (seq_in_length and seq_stride not None) or simple zero padded dataset with full paths (seq_in_length and seq_stride None)
+        Create fixed length dataset (seq_in_length not None) or variable length non-batched dataset (seq_in_length is None)
         Add noise to test dataset (noise_std is standard deviation in meter) if noise_std is not None
         Extra_features contains extra features to be added in dataset, graph is needed to get those extra features (destination probabilities etc)
         '''
@@ -113,10 +113,14 @@ class TFDataSet():
         df_test = data.iloc[(n_train+n_val):, :]
         # if path analysis was not given, do it
         if ds_creation_dict is None:
+            # Make sure the graph transition matrices are calculated
+            graph.recalculate_trans_mat_dependencies()
+
+            # Create the ds dicts
             ds_creation_dict = dict()
-            ds_creation_dict["train"] = cls.__df_to_ds_dict(cls, df_train, id_col_name, label_length, seq_in_length, seq_stride, extra_features_dict=extra_features_dict, graph=graph, normer=normer)
-            ds_creation_dict["test"] = cls.__df_to_ds_dict(cls, df_test, id_col_name, label_length, seq_in_length, seq_stride, extra_features_dict=extra_features_dict, graph=graph, normer=normer)
-            ds_creation_dict["val"] = cls.__df_to_ds_dict(cls, df_val, id_col_name, label_length, seq_in_length, seq_stride, extra_features_dict=extra_features_dict, graph=graph, normer=normer)
+            ds_creation_dict["train"] = cls.__df_to_ds_dict(cls, df_train, id_col_name, label_length, seq_in_length, var_in_len, length_stride, extra_features_dict=extra_features_dict, graph=graph, normer=normer)
+            ds_creation_dict["test"] = cls.__df_to_ds_dict(cls, df_test, id_col_name, label_length, seq_in_length, var_in_len, length_stride, extra_features_dict=extra_features_dict, graph=graph, normer=normer)
+            ds_creation_dict["val"] = cls.__df_to_ds_dict(cls, df_val, id_col_name, label_length, seq_in_length, var_in_len, length_stride, extra_features_dict=extra_features_dict, graph=graph, normer=normer)
         # save the creation dicts for later use
             with open(save_folder, 'wb') as handle:
                 pickle.dump(ds_creation_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -124,16 +128,19 @@ class TFDataSet():
         ds_dict = dict()
 
         ds_dict["train"], size_dict = cls.ds_dict_to_ds(cls, ds_creation_dict["train"], normer, noise_std, 
-        do_shuffle, shuffle_buffer_size, batch_size, n_repeats, label_length, in_col_nums, out_col_nums, noise_std_vect)
+        do_shuffle, shuffle_buffer_size, batch_size, n_repeats, label_length, in_col_nums, out_col_nums, noise_std_vect,
+        var_in_len, length_stride)
         ds_dict["test"], _ = cls.ds_dict_to_ds(cls, ds_creation_dict["test"], normer, noise_std, 
-        do_shuffle, shuffle_buffer_size, batch_size, n_repeats, label_length, in_col_nums, out_col_nums, noise_std_vect)
+        do_shuffle, shuffle_buffer_size, batch_size, n_repeats, label_length, in_col_nums, out_col_nums, noise_std_vect,
+        var_in_len, length_stride)
         ds_dict["val"], _ = cls.ds_dict_to_ds(cls, ds_creation_dict["val"], normer, noise_std, 
-        do_shuffle, shuffle_buffer_size, batch_size, n_repeats, label_length, in_col_nums, out_col_nums, noise_std_vect)
+        do_shuffle, shuffle_buffer_size, batch_size, n_repeats, label_length, in_col_nums, out_col_nums, noise_std_vect,
+        var_in_len, length_stride)
 
         return cls(ds_dict, batch_size, seq_in_length, label_length, train_perc, test_perc, val_perc,
         in_dict, out_dict, x_col_name, y_col_name, do_shuffle, size_dict, normer=normer, scale_cols=scale_list)
 
-    def __df_to_ds_dict(self, df, id_col_name, lbl_length, seq_in_length, seq_stride, 
+    def __df_to_ds_dict(self, df, id_col_name, lbl_length, seq_in_length, var_in_len, length_stride,
     extra_features_dict=None, graph=None, normer=None):
         ''' 
         Go from a pd dataframe to a TF dataset 
@@ -156,34 +163,47 @@ class TFDataSet():
 
         # Extracting paths from dataframe
         ds_pickle_list = []
-        if not type(seq_in_length) == list:
-            seq_in_length = [seq_in_length]
 
-        
-        for in_length in seq_in_length:
-            for i in tqdm(df_c[id_col_name].unique()):
-                # create a dictionary for this path, will eventually be used for TF DS
-                ds_dict = dict()            
-                # extract a dataframe of one trajectory
-                path_df = df_c.loc[df_c[id_col_name] == i]
-                path_df = path_df.drop(columns = id_col_name)
-                path_np = path_df.to_numpy()
+        for i in tqdm(df_c[id_col_name].unique()):
+            # create a dictionary for this path, will eventually be used for TF DS
+            ds_dict = dict()            
+            # extract a dataframe of one trajectory
+            path_df = df_c.loc[df_c[id_col_name] == i]
+            path_df = path_df.drop(columns = id_col_name)
+            path_np = path_df.to_numpy()
 
+            # for getting variable output length
+            #   get number of data points in this path
+            num_points = len(path_df)
+
+            if num_points-lbl_length+1 < seq_in_length:
+                print("Num points %d and lbl length %d and seq in length %d" % (len(path_np), lbl_length, seq_in_length))
+                continue
+            
+            if not var_in_len:
+                seq_in_length_l = [seq_in_length]   
+            else:
+                seq_in_length_l = range(seq_in_length, num_points-lbl_length+1, length_stride)   
+
+            for in_length in seq_in_length_l:
                 # Windowing if needed
-                if not (seq_in_length is None or seq_stride is None):
-                    def windower(a, window_size):
-                        n = a.shape[0]
-                        n_out_frames = (n-window_size+1)
-                        if n >= window_size:
-                            return np.stack(a[i:i+window_size] for i in range(0,n_out_frames)), n_out_frames
-                        else:
-                            return np.array([]), n_out_frames
-                    
-                    path_np_w, n_frames = windower(path_np, in_length + lbl_length)
 
-                    # if no windows were returned --> skip to next path
-                    if path_np_w.size == 0:
-                        continue            
+                def windower(a, window_size):
+                    n = a.shape[0]
+                    n_out_frames = max((n-window_size+1),0)
+                    if n >= window_size:
+                        return np.stack(a[i:i+window_size] for i in range(0,n_out_frames)), n_out_frames
+                    else:
+                        return np.array([]), n_out_frames
+
+
+                # windowing with fixed in put length                  
+                path_np_w, n_frames = windower(path_np, in_length + lbl_length)
+
+                # if no windows were returned --> skip to next path
+                if path_np_w.size == 0:
+                    print("continue2")
+                    continue    
 
                 ds_dict["xy"]=path_np_w
 
@@ -306,7 +326,7 @@ class TFDataSet():
 
     def ds_dict_to_ds(self, ds_dicts_list, normer, noise_std, 
     shuffle, shuffle_buffer_size, batch_size, n_repeats,
-    lbl_length, in_col_nums, out_col_nums, noise_std_vector):
+    lbl_length, in_col_nums, out_col_nums, noise_std_vector, var_in_len, length_stride):
         size_dict = dict()
         ex_ds_dict = ds_dicts_list[0]
         for key in list(ex_ds_dict.keys()):

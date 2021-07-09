@@ -28,6 +28,7 @@ class DLTrainer:
     def compile_and_fit(self, ds_creator_inst, save_path = None, test_fit = False):
         if test_fit:
             max_epochs = 1
+
         else:
             max_epochs = self.max_epochs
 
@@ -45,16 +46,19 @@ class DLTrainer:
                     metrics=[self._metric])
         cb = [early_stopping, checkpoint]
 
-        history = self.model.fit(dataset_dict['train'], epochs=max_epochs,
-                            validation_data=dataset_dict['val'],
-                            callbacks=cb)    
+        if test_fit:
+            ex_dataset = tf.data.Dataset.from_tensors(next(iter(dataset_dict['train'])))
+            history = self.model.fit(ex_dataset, epochs=max_epochs,
+                                validation_data=ex_dataset,
+                                callbacks=cb)    
+        else:
+            history = self.model.fit(dataset_dict['train'], epochs=max_epochs,
+                                validation_data=dataset_dict['val'],
+                                callbacks=cb)    
 
         return history
 
     def load_weights(self, save_path):
-        # do a prediction in order to initialize the model...
-        # self.model(tf.zeros((1, self.num_in_steps, self.num_in_features)))
-        # now really load the weights
         self.model.load_weights(save_path)
 
     def predict(self, input_tensor, scale_input_tensor, n_evaluations = 1):
@@ -138,14 +142,15 @@ class DLTrainer:
 
         return composed_output, composed_output_s  
 
-    def predict_repetitively_dict(self, input_dict, scale_input_tensor, num_out_predictions, fixed_len_input):
+    def predict_repetitively_dict(self, input_dict, scale_input_tensor, num_out_predictions, variable_len_input):
         input_dict_c = dict(input_dict)
         '''
         Prediction based on input dict
         scale_input_tensor sets whether the input tensor still needs to be scaled
         num_out_predictions is number of outputs (approx)
-        fixed_len_input sets whether network only receives fixed length input
+        variable_len_input sets whether network only receives fixed length input
         '''
+
         # Make sure input tensor is 3d 
         if len(input_dict_c["in_xy"].shape) <= 2:
             input_dict_c["in_xy"] = tf.expand_dims(input_dict_c["in_xy"], axis=0)
@@ -170,7 +175,8 @@ class DLTrainer:
             input_dict_c["in_xy"] = tf.concat([input_dict_c["in_xy"], new_output], axis=1)
 
             # drop the n first rows if input has to stay same length
-            if fixed_len_input:
+            if not variable_len_input:
+                print(f"Fixed length truncating done.")
                 input_dict_c["in_xy"] = input_dict_c["in_xy"][:, -self.num_in_steps:, :]
 
         return assembled_output

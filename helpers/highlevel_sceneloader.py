@@ -325,7 +325,17 @@ class HighLevelSceneLoader():
     out_xy = []
     for split_id in split_ids:
       out_xy.append(df[df[self.df_split_col]==split_id][[self.df_x_col, self.df_y_col]].to_numpy())
-    return out_xy        
+    return out_xy     
+
+  def df_to_lst_realxy_mats_ext(self, df):
+    ''' Convert a dataframe to a list of xy matrices based on a value in split_col '''
+    df = df.copy()
+    sc = self.df_split_col
+    split_ids = df[sc].unique()
+    out_xy = []
+    for split_id in split_ids:
+      out_xy.append(df[df[self.df_split_col]==split_id][[self.df_x_col, self.df_y_col]].to_numpy())
+    return out_xy   
 
   def plot_all_trajs_on_img(self, save_path, col_num_dicts=dict(zip(["x", "y"], [0, 1]))):
     ''' Plot all the trajectories on the background image '''

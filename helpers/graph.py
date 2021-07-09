@@ -4,6 +4,7 @@ from math import floor, ceil, sqrt
 import matplotlib.pyplot as plt 
 import networkx as nx
 from numpy.core.numeric import False_
+from numpy.lib.function_base import append
 from tensorflow.python.types.core import Value
 
 # TODO: Add observers in order to only do the necessary recalculations https://stackoverflow.com/questions/6190468/how-to-trigger-function-on-value-change
@@ -59,6 +60,76 @@ class Graph():
             dest_dict[key] = (mat_dest[i,0], mat_dest[i,1])
         return cls(wayp_dict, dest_dict, dist_threshold, std_graph_prune_threshold)  
 
+    @classmethod
+    def from_grid(cls, mat_dest, scene_limits, grid_dist, dist_threshold, 
+    std_graph_prune_threshold, keep_orig_dest_loc = False):
+        ''' Create full grid structure instead of using "smart" waypoints '''
+        # scene limits (xmin, xmax, ymin, ymax)
+
+        # list to store points
+        wp_list = []
+
+        # grid nums
+        x_min, x_max, y_min, y_max = scene_limits
+        x_offset = ((x_max-x_min)%grid_dist) / 2
+        y_offset = ((y_max-y_min)%grid_dist) / 2
+
+        num_horiz_points = floor((x_max-x_min)/grid_dist) + 1
+        num_vert_points = floor((y_max-y_min)/grid_dist) + 1
+
+        # get the locations in the grid
+        for h in range(num_horiz_points):
+            for v in range(num_vert_points):
+                wp_list.append([x_min+x_offset+h*grid_dist, y_min+y_offset+v*grid_dist])
+        
+        # get which locations will be considered destination
+        dests = []
+        for destination in mat_dest:
+            min_dist = 999.
+            min_dist_id = -1
+            for grid_point, id in zip(wp_list, range(len(wp_list))):
+                dist = sqrt((destination[0]-grid_point[0])**2+(destination[1]-grid_point[1])**2)
+
+                if dist < min_dist:
+                    min_dist = dist
+                    min_dist_id = id
+            if not min_dist_id in dests:
+                dests.append(min_dist_id)
+        
+        # create the needed matrices
+        if not keep_orig_dest_loc:
+            dests.sort(reverse=True)
+
+            dest_list = []
+            for dest in dests:
+                dest_list.append(wp_list.pop(dest))
+            
+            return cls.from_matrices(np.array(wp_list), np.array(dest_list),
+            dist_threshold, std_graph_prune_threshold)          
+        else:
+            dests.sort(reverse=True)  
+            for dest in dests:                              
+                wp_list.pop(dest)
+                return cls.from_matrices(np.array(wp_list), mat_dest,
+                dist_threshold, std_graph_prune_threshold)   
+
+    def get_used_nodes(self):
+        wp_list = []
+        dest_list = []
+
+        for index in range(len(self.trans_mat)):
+            if not (np.sum(self.trans_mat[index, :])==0 and np.sum(self.trans_mat[:, index])==0):
+                if self.index_from_waypoint(index) == True:
+                    wp_list.append(self.indices_location_dict[index])
+                else:
+                    dest_list.append(self.indices_location_dict[index])
+
+        return np.matrix(wp_list), np.matrix(dest_list)
+
+    def get_extra_wps(self):
+        ''' After calculating the graph, add waypoints on the major connections evenly spaces '''
+
+        return updated_wp_dict
 
     def analyse_multiple_full_signals(self, signal_list, add_to_trams_mat):
         return_lists = []
@@ -579,10 +650,18 @@ class Graph():
 
         return self.__return_n_most_likely_points(locs, probs, n)
 
-    def return_n_most_likely_points(self, n, nodes, points_or_dests = "destinations"):
+    def return_n_most_likely_points(self, n, nodes, return_type = "locs", points_or_dests = "destinations"):
+        ''' return most likely points/destination and probs'''
+
         # return dict with probs for each destination 
         dest_probs = self.calculate_destination_probs(nodes, points_or_dests)
-        locs = [self.points_dict[x] for x in list(dest_probs.keys())]
+        if return_type == "locs":
+            locs = [self.points_dict[x] for x in list(dest_probs.keys())]
+        elif return_type == "names":
+            locs = [x for x in list(dest_probs.keys())]
+        elif return_type == "indices":
+            locs = [self.destinations_indices_dict[x]-self.num_waypoints for x in list(dest_probs.keys())]
+        
         probs = [x for x in list(dest_probs.values())]
         
         return self.__return_n_most_likely_points(locs, probs, n)
@@ -626,6 +705,12 @@ class Graph():
 
         return locs, probs
 
+    def index_from_waypoint(self, index):
+        return True if index < self.num_waypoints else False
+
+    def index_from_destination(self, index):
+        return True if (index >= self.num_waypoints) else False
+
     @property  
     def threshold(self):
         return self._threshold
@@ -651,6 +736,7 @@ class Graph():
 
     @property 
     def points_dict(self):
+        ''' Map node names to location '''
         return {**self.wayp_dict, **self.dest_dict}
 
     @property
@@ -681,6 +767,11 @@ class Graph():
         [x + self.num_waypoints for x in list(range(self.num_destinations))]))
 
     @property
+    def indices_location_dict(self):
+        ''' Map indices to corresponding location '''
+        return dict(zip(range(self.num_nodes), self.points_dict.values()))
+
+    @property
     def num_nodes(self):
         return len(self.points_names)
     
@@ -691,6 +782,8 @@ class Graph():
     @property 
     def num_waypoints(self):
         return len(self.waypoint_names)
+
+
 
     @property 
     def stored_mats_keys(self):

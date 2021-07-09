@@ -11,7 +11,7 @@ class extended_predictor:
         self._dl_trainer = dl_trainer
         self._time_per_step = time_per_step
     
-    def predict_to_destinations(self, input_dict, num_steps, num_predictions, fixed_len_input):
+    def predict_to_destinations(self, input_dict, num_steps, num_predictions, variable_len_input):
         '''
         Predict the output based on an input dict 
         num_steps steps in to the future
@@ -57,7 +57,7 @@ class extended_predictor:
             input_dict_c["all_destinations"] = dest_loc_one_hot
 
             predicted_rep_out = self.dl_trainer.predict_repetitively_dict(input_dict_c, scale_input_tensor=False,
-            num_out_predictions=num_steps,fixed_len_input=fixed_len_input)
+            num_out_predictions=num_steps,variable_len_input=variable_len_input)
 
             # Add the result to the stack list
             stack_list.append(predicted_rep_out)
