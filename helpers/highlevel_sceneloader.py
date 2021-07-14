@@ -68,8 +68,8 @@ class HighLevelSceneLoader():
             vals = []
 
             for val in img_bound:
-              print(val.tag)
-              print(val.text)
+              # print(val.tag)
+              # print(val.text)
               names.append(val.tag)
               vals.append(float(val.text))
 
@@ -109,7 +109,7 @@ class HighLevelSceneLoader():
           add_file_data[split_col] += max_id
           ind_dataset = ind_dataset.append(add_file_data)     
 
-          print("Index %i and length %i"%(i, len(ind_dataset)))     
+          # print("Index %i and length %i"%(i, len(ind_dataset)))     
 
           i += 1
           if i > end_file_id_range:
@@ -215,7 +215,7 @@ class HighLevelSceneLoader():
       except:
         ax.invert_yaxis()
 
-    for xy, i, col_num_dict in zip(lst_realxy_mats, range(len(lst_realxy_mats)), col_num_dicts):
+    for xy, i, col_num_dict, color in zip(lst_realxy_mats, range(len(lst_realxy_mats)), col_num_dicts, colors):
    
       # Plot if there is actual data
       if np.size(xy) > 0:
@@ -238,7 +238,7 @@ class HighLevelSceneLoader():
           m_size = ms[i]
         else:
           m_size = ms
-        ax.scatter(xy_np[:, col_num_dict['x']], xy_np[:, col_num_dict['y']], s=m_size, c=colors)
+        ax.scatter(xy_np[:, col_num_dict['x']], xy_np[:, col_num_dict['y']], s=m_size, c=color)
 
     if not labels is None:
       ax.legend(labels)
@@ -269,19 +269,17 @@ class HighLevelSceneLoader():
       ax.add_patch(circle)
     if save_path is not None:
       plt.gcf()
-      plt.savefig(save_path, dpi=500)
+      plt.savefig(save_path, dpi=500, bbox_inches='tight')
     return None
 
-  def plot_dest_probs(self, dest_locs, dest_probs, min_marker_size, max_marker_size, ax = None, save_path = None):
+  def plot_dest_probs(self, dest_locs, dest_probs, min_marker_size, max_marker_size, ax = None, save_path = None, color="red"):
     ''' for plotting the destination probabilities, visible by the size of the probability '''
     # assert numpy format
-    dest_locs_mat = np.array((dest_locs))
-    dest_probs_mat = np.array((dest_probs))
+    dest_locs_mat = np.array(dest_locs)
+    dest_probs_mat = np.array(dest_probs)
     # basic checks
-    assert len(dest_locs_mat) == len(dest_probs_mat) 
+    # assert len(dest_locs_mat) == len(dest_probs_mat) 
     assert max_marker_size > min_marker_size 
-
-
 
     # pyplot things
     if ax is None:
@@ -292,6 +290,7 @@ class HighLevelSceneLoader():
     # figure out how to scale probs to marker size
     probs_min = np.nanmin(dest_probs_mat)
     probs_max = np.nanmax(dest_probs_mat)
+    print(probs_min)
     p_s_scalef = (max_marker_size-min_marker_size)/(probs_max - probs_min)
 
     # construct list of marker sizes for each point    
@@ -308,7 +307,7 @@ class HighLevelSceneLoader():
         sizes.append(min_marker_size)
     
     # plot on the figure
-    ax.scatter(dest_locs_mat[:, 0], dest_locs_mat[:, 1], s=sizes)
+    ax.scatter(dest_locs_mat[:, 0], dest_locs_mat[:, 1], s=sizes, c=color)
 
     # save if needed
     if save_path is not None:

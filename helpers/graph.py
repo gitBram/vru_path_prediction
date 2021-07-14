@@ -315,16 +315,6 @@ class Graph():
         full_prob = dict()
         for dest in target_names:
             full_prob[dest] = path_prob * end_to_dest_prob[dest] / start_to_dest_prob[dest]
-        
-        # print('Path prob:')
-        # print(path_prob)
-        # print('Path end to Dest prob:')
-        # print(end_to_dest_prob)
-        # print('Path start to Dest prob:')
-        # print(start_to_dest_prob)
-        # print('Full calculated probs:')
-        # print(full_prob)
-
 
         return full_prob
 
