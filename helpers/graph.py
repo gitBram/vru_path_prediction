@@ -285,17 +285,20 @@ class Graph():
     
     def __calculate_destination_probs_back(self, path, dests_or_points):
         '''
-        Calculate prob of path to all destinations, 
+        Calculate prob of path to all destinations, all points or connected points
         '''
         # Sanity check
-        dop_allowed = ["destinations", "points"]
+        dop_allowed = ["destinations", "points", "connected_points"]
         if not dests_or_points in dop_allowed:
-            raise Value("dests_or_points choice should be one of %s" % (dop_allowed))
+            raise ValueError("dests_or_points choice should be one of %s" % (dop_allowed))
 
         # Set whether calculating chance to destination points or to all waypoints in the network
         target_names = None
         if dests_or_points == "destinations":
             target_names = self.destination_names
+        elif dests_or_points == "connected_points":            
+            target_names = self.remove_unconnected_points_from_list(path[-1], self.points_names, .03)
+            # print("Nodes connected to %s are %s" % (path[-1], target_names))
         else:
             target_names = self.points_names
 
@@ -640,11 +643,27 @@ class Graph():
 
         return self.__return_n_most_likely_points(locs, probs, n)
 
-    def return_n_most_likely_points(self, n, nodes, return_type = "locs", points_or_dests = "destinations"):
+    def remove_unconnected_points_from_list(self, point_name, some_list, graph_thresh):
+        ''' Remove entries from a list some_list that are not connected to the point point_name '''
+        # create graph for easily finding connected points
+        my_graph = self.create_graph(graph_thresh)
+
+        # do the connected points extraction
+        connected_points = [self.indices_points_dict[n] for n in my_graph.neighbors(self.points_indices_dict[point_name])]
+
+        index_list = []
+        for point, index in zip(some_list, range(len(some_list))):
+            if point in connected_points:
+                index_list.append(index)
+        return [some_list[i] for i in index_list]
+
+
+    def return_n_most_likely_points(self, n, nodes, return_type = "locs", points_or_dests = "destinations", must_connect = False):
         ''' return most likely points/destination and probs'''
 
         # return dict with probs for each destination 
         dest_probs = self.calculate_destination_probs(nodes, points_or_dests)
+
         if return_type == "locs":
             locs = [self.points_dict[x] for x in list(dest_probs.keys())]
         elif return_type == "names":
@@ -654,6 +673,7 @@ class Graph():
         
         probs = [x for x in list(dest_probs.values())]
         
+        # print("Path Nodes: %s" % (nodes))
         return self.__return_n_most_likely_points(locs, probs, n)
 
 
@@ -681,7 +701,17 @@ class Graph():
         probs = probs[:min(num_points_avail, n)]
         
         # if not enough connected points, add zeros
-        if num_points_avail < n:    
+        if num_points_avail == 0:
+            zero_locs = np.tile(np.zeros((1,2)),(n,1))
+            zero_probs = np.squeeze(np.tile(np.array([0.]),(1, n)))
+
+            # for avoiding difficulty in concat
+            zero_probs = zero_probs.reshape(1, zero_probs.size)
+
+            locs = zero_locs
+            probs = zero_probs
+
+        elif num_points_avail < n and num_points_avail:    
             diff = n - num_points_avail   
             zero_locs = np.tile(np.zeros((1,2)),(diff,1))
             zero_probs = np.squeeze(np.tile(np.array([0.]),(1, diff)))
@@ -689,11 +719,12 @@ class Graph():
             # for avoiding difficulty in concat
             zero_probs = zero_probs.reshape(1, zero_probs.size)
             probs = probs.reshape(1, probs.size)
+            
 
             locs = np.concatenate([locs, zero_locs], axis=0)
             probs = np.concatenate([probs, zero_probs], axis=-1)
 
-        return locs, probs
+        return locs, np.squeeze(probs)
 
     def index_from_waypoint(self, index):
         return True if index < self.num_waypoints else False

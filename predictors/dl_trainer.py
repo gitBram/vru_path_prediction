@@ -1,5 +1,6 @@
 ''' class for training deep learning models and setting parameters for the training phase'''
 
+from copy import Error
 from numpy.core.fromnumeric import var
 import tensorflow as tf
 from tensorflow.python import keras
@@ -8,6 +9,8 @@ from keras import backend as K
 from keras import Model
 from keras.layers import Dense, LSTM, Reshape, InputLayer, Flatten, Concatenate, Dropout, Concatenate, Input
 from math import ceil
+import pickle
+import numpy as np
 
 class DLTrainer:
     def __init__(self, max_epochs, patience, loss_function = tf.losses.MeanSquaredError(), optimizer = tf.keras.optimizers.Adam(), metric = tf.metrics.MeanAbsoluteError()):
@@ -24,15 +27,52 @@ class DLTrainer:
         self._num_in_steps = None
         self._num_out_steps = None
 
-
     def compile_and_fit(self, ds_creator_inst, save_path = None, test_fit = False):
+        dataset_dict = ds_creator_inst.tf_ds_dict
+        return self.compile_and_fit2(dataset_dict["train"], dataset_dict["val"], save_path, test_fit)
+
+    def compile_and_fit2(self, training_ds, validation_ds, save_path = None, test_fit = False):
+
+        #---
+        class CustomSaveCallback(keras.callbacks.Callback):
+            def __init__(self,save_path='model.pickle'):
+                super(CustomSaveCallback, self).__init__()
+                # best_weights to store the weights at which the minimum loss occurs.
+                self.best_weights = None
+                self.save_path = save_path
+
+            def on_train_begin(self, logs=None):
+                # Initialize the best as infinity.
+                self.best = np.Inf
+
+            def on_epoch_end(self, epoch, logs=None):
+
+                current = logs.get("val_loss")
+
+
+                if np.less(current, self.best):
+                    # Record the best weights if current results is better (less).
+                    self.best_weights = self.model.get_weights()
+                    self.best = current
+
+                    # Save to pickle
+                    # full_path =self.save_path.split(".")[0] + "_epoch_%s_valloss_%6.3f.pickle"%(epoch, current)
+                    full_path=save_path
+                    fpkl= open(full_path, 'wb')    #Python 3     
+                    pickle.dump(self.best_weights, fpkl, protocol= pickle.HIGHEST_PROTOCOL)
+                    fpkl.close()
+
+                    print("Alternative save happened on for epoch %s happened on %s for val_loss of %6.4f." % (epoch, full_path, current))
+                else:
+                    print("No alternative save happened on for epoch %s"%(epoch))
+        #---
+
         if test_fit:
             max_epochs = 1
 
         else:
             max_epochs = self.max_epochs
 
-        dataset_dict = ds_creator_inst.tf_ds_dict
         early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss',
                                                         patience=self._patience,
                                                         mode='min',
@@ -44,22 +84,26 @@ class DLTrainer:
         self.model.compile(loss=self._loss_function,
                     optimizer=self._optimizer,
                     metrics=[self._metric])
-        cb = [early_stopping, checkpoint]
+        cb = [early_stopping, checkpoint, CustomSaveCallback(save_path)]
 
         if test_fit:
-            ex_dataset = tf.data.Dataset.from_tensors(next(iter(dataset_dict['train'])))
+            ex_dataset = tf.data.Dataset.from_tensors(next(iter(training_ds)))
             history = self.model.fit(ex_dataset, epochs=max_epochs,
                                 validation_data=ex_dataset,
                                 callbacks=cb)    
         else:
-            history = self.model.fit(dataset_dict['train'], epochs=max_epochs,
-                                validation_data=dataset_dict['val'],
+            history = self.model.fit(training_ds, epochs=max_epochs,
+                                validation_data=validation_ds,
                                 callbacks=cb)    
 
         return history
 
-    def load_weights(self, save_path):
-        self.model.load_weights(save_path)
+    def load_weights(self, weights_pickle_path):
+
+        with open(weights_pickle_path, 'rb') as f:
+            loaded_weight = pickle.load(f)
+
+        self.model.set_weights(loaded_weight)
 
     def predict(self, input_tensor, scale_input_tensor, n_evaluations = 1):
         ''' 
@@ -176,7 +220,6 @@ class DLTrainer:
 
             # drop the n first rows if input has to stay same length
             if not variable_len_input:
-                print(f"Fixed length truncating done.")
                 input_dict_c["in_xy"] = input_dict_c["in_xy"][:, -self.num_in_steps:, :]
 
         return assembled_output
@@ -251,7 +294,16 @@ class DLTrainer:
         return None
 
     def LSTM_one_shot_predictor_named_i(self, ds_creator_inst, lstm_layer_size, 
-    dense_layer_size, n_LSTM_layers, n_dense_layers, extra_features, var_time_len):
+    dense_layer_size, n_LSTM_layers, n_dense_layers, extra_features, var_time_len, size_dict=None):
+        # sanity check
+        if len(extra_features) > 0:
+            if size_dict is None:
+                raise Error("size_dict cannot be None if extra features have been included.")
+            else:
+                for k in extra_features:
+                    if k not in size_dict.keys():
+                        return ValueError("extra_feature %s is not specified in size_dict."%(k))
+        # set var vs fixed time axis                
         if not var_time_len:
             print(ds_creator_inst.num_in_steps)
             in_xy = Input(shape=(ds_creator_inst.num_in_steps, ds_creator_inst.num_in_features), name="in_xy")
@@ -272,12 +324,20 @@ class DLTrainer:
         # add inputs for the extra features
         concat_list = [m]
         if "all_destinations" in extra_features:
-
-            all_destinations = Input(shape=(9,3), name="all_destinations")
+            all_destinations = Input(shape=size_dict["all_destinations"], name="all_destinations")
             print(all_destinations)
             n = Flatten()(all_destinations)
             concat_list.append(n)
-
+        if "all_points" in extra_features:
+            all_points = Input(shape=size_dict["all_points"], name="all_points")
+            print(all_points)
+            n = Flatten()(all_points)
+            concat_list.append(n)
+        if "n_connected_points_after" in extra_features:
+            n_connected_points_after = Input(shape=size_dict["n_connected_points_after"], name="n_connected_points_after")
+            print(n_connected_points_after)
+            n = Flatten()(n_connected_points_after)
+            concat_list.append(n)
         m = Concatenate()(concat_list)
 
         m = Dense(dense_layer_size)(m)
@@ -292,6 +352,11 @@ class DLTrainer:
         input_list = [in_xy]
         if "all_destinations" in extra_features:
             input_list.append(all_destinations)
+        if "n_connected_points_after" in extra_features:
+            input_list.append(n_connected_points_after)
+        if "all_points" in extra_features:
+            input_list.append(all_points)
+
         model = tf.keras.Model(
             input_list,
             [m]

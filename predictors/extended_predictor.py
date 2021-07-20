@@ -26,7 +26,7 @@ class extended_predictor:
         input_lbl = self.remove_padding_vals(input_dict["input_labels"])
         print(input_lbl)
         visited_nodes,_ = self.graph.analyse_full_signal(input_lbl, False, allow_out_of_threshold=True)
-        dest_prob_dict = self.graph.calculate_destination_probs(visited_nodes,"destinations")
+        dest_prob_dict = self.graph.calculate_destination_probs(visited_nodes, "destinations")
 
         # Predict num_steps towards each destination (It's easy: dl_trainer handles scaling etc)
         # get list of all destinations + locations

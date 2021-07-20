@@ -181,7 +181,7 @@ class HighLevelSceneLoader():
 
 
   def plot_on_image(self, lst_realxy_mats, ms = 3, invert_y = False, save_path = None, 
-  ax=None, col_num_dicts=dict(zip(["x", "y"], [0, 1])), labels=None, colors=None, title=None, 
+  ax=None, col_num_dicts=dict(zip(["x", "y"], [0, 1])), labels=None, colors=['Green'], title=None, 
   axes_labels=None, hide_axes=False):
     ''' Plot a list of xy matrices on top of an image '''
     # Check input types
@@ -191,6 +191,8 @@ class HighLevelSceneLoader():
     # try to expand the dicts list to correct shape by copying it
     if len(col_num_dicts) == 1 and len(lst_realxy_mats) > 1:
       col_num_dicts = col_num_dicts * len(lst_realxy_mats)
+    if len(colors) == 1 and len(lst_realxy_mats) > 1:  
+      colors = colors * len(lst_realxy_mats) 
     
     # Sanity check
     if len(lst_realxy_mats) != len(col_num_dicts):
@@ -216,7 +218,7 @@ class HighLevelSceneLoader():
         ax.invert_yaxis()
 
     for xy, i, col_num_dict, color in zip(lst_realxy_mats, range(len(lst_realxy_mats)), col_num_dicts, colors):
-   
+      
       # Plot if there is actual data
       if np.size(xy) > 0:
         # start by removing zeros, if any
@@ -238,6 +240,7 @@ class HighLevelSceneLoader():
           m_size = ms[i]
         else:
           m_size = ms
+        # print(xy)
         ax.scatter(xy_np[:, col_num_dict['x']], xy_np[:, col_num_dict['y']], s=m_size, c=color)
 
     if not labels is None:
@@ -290,7 +293,7 @@ class HighLevelSceneLoader():
     # figure out how to scale probs to marker size
     probs_min = np.nanmin(dest_probs_mat)
     probs_max = np.nanmax(dest_probs_mat)
-    print(probs_min)
+    # print(probs_min)
     p_s_scalef = (max_marker_size-min_marker_size)/(probs_max - probs_min)
 
     # construct list of marker sizes for each point    

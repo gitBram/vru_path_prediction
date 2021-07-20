@@ -177,7 +177,7 @@ class TFDataSet():
             num_points = len(path_df)
 
             if num_points-lbl_length+1 < seq_in_length:
-                print("Num points %d and lbl length %d and seq in length %d" % (len(path_np), lbl_length, seq_in_length))
+                # print("Num points %d and lbl length %d and seq in length %d" % (len(path_np), lbl_length, seq_in_length))
                 continue
             
             if not var_in_len:
@@ -250,6 +250,10 @@ class TFDataSet():
                         ds_dict[extra_f] = tf.tile(tf.expand_dims(ds_dict[extra_f],0), [n_frames, 1, 1])
                     if "n_connected_points" in extra_f_keys:
                         extra_f = "n_connected_points"
+                        ds_dict[extra_f] = self.__get_n_point_prob_tensor(self, path_np, normer, graph, 
+                        extra_features_dict[extra_f], "connected_points")
+                        # Multiply the extra feature for each window
+                        ds_dict[extra_f] = tf.tile(tf.expand_dims(ds_dict[extra_f],0), [n_frames, 1, 1])
                     if "n_destinations" in extra_f_keys:
                         extra_f = "n_destinations"
                         ds_dict[extra_f] = self.__get_n_point_prob_tensor(self, path_np, normer, graph, 
@@ -263,9 +267,10 @@ class TFDataSet():
                         # Multiply the extra feature for each window
                         ds_dict[extra_f] = tf.tile(tf.expand_dims(ds_dict[extra_f],0), [n_frames, 1, 1])
 
-                    for path in path_np_w:
+                    # for path in path_np_w:
+                    for path in ds_dict["input_labels"]:
                         # no cheating: only get the points that will be used as input
-                        path = path[:-lbl_length, :]
+                        # path = path[:-lbl_length, :]
                         if "all_points_after" in extra_f_keys:
                             extra_f = "all_points_after" 
                             # Get the feature output
@@ -292,6 +297,16 @@ class TFDataSet():
                             extra_f_sizes[extra_f] = ds_dict[extra_f].shape
                         if "n_connected_points_after" in extra_f_keys:
                             extra_f = "n_connected_points_after"
+                            f_result = tf.expand_dims(
+                                self.__get_n_point_prob_tensor(self, path, normer, graph, extra_features_dict[extra_f], "connected_points"),
+                                axis=0)
+                            # Add the feature output to the dict
+                            if extra_f in ds_dict:
+                                ds_dict[extra_f] = tf.concat([ds_dict[extra_f],f_result], axis=0)
+                            else:
+                                ds_dict[extra_f] = f_result
+                            # Save the shape of the feature for setting up the neural network
+                            extra_f_sizes[extra_f] = ds_dict[extra_f].shape
                         if "n_destinations_after" in extra_f_keys:
                             extra_f = "n_destinations_after"
                             f_result = tf.expand_dims(
@@ -330,7 +345,7 @@ class TFDataSet():
         size_dict = dict()
         ex_ds_dict = ds_dicts_list[0]
         for key in list(ex_ds_dict.keys()):
-            size_dict[key] = ex_ds_dict[key].shape
+            size_dict[key] = ex_ds_dict[key][0].shape
         
         # function for adding noise
         @tf.function
@@ -415,7 +430,7 @@ class TFDataSet():
 
     def __get_n_point_prob_tensor(self, path, normer, graph, n, points_or_dests = "points"):
         # sanity check
-        allowed_pos = ["points", "destinations"]
+        allowed_pos = ["points", "destinations", "connected_points"]
         if not points_or_dests in allowed_pos:
             raise ValueError("Input %s is not allowed. Only values %s are allowed."%(points_or_dests, allowed_pos))
 
@@ -443,7 +458,8 @@ class TFDataSet():
         allowed_pos = ["points", "destinations"]
         if not points_or_dests in allowed_pos:
             raise ValueError("Input %s is not allowed. Only values %s are allowed."%(points_or_dests, allowed_pos))
-
+        allowed_must_connect = [False, True]
+ 
         nodes, _ = graph.analyse_full_signal(path, False)
         if len(nodes) > 0:
             out = graph.calculate_destination_probs(nodes, dests_or_points=points_or_dests)
@@ -462,7 +478,7 @@ class TFDataSet():
         else:
             # Option 1: Just find probs from closest point (even though not in predefined range)
             node,_ = graph.find_closest_point(path[-1])
-            out = graph.calculate_destination_probs(node, dests_or_points=points_or_dests)
+            out = graph.calculate_destination_probs(node, dests_or_points=points_or_dests, must_connect=must_connect)
             
             location_list = []
             prob_list = []
