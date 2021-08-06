@@ -4,6 +4,7 @@ from .de_normalizer import DataDeNormalizer
 import pickle
 import os
 from tqdm import tqdm
+from helpers.accuracy_functions import remove_padding_vals2
 
 ''' Create train, test and verification TF data pipeline for training from a big datasource or multiple datasources'''
 
@@ -150,8 +151,8 @@ class TFDataSet():
         # inits
         ds = None
         df_c = df.copy()
-        max_label_len = df_c.groupby(id_col_name).count().max()[0]
-
+        max_label_len = df_c.groupby(id_col_name).count().max()[0] - seq_in_length
+        max_inp_label_len = df_c.groupby(id_col_name).count().max()[0] - lbl_length
         # Sanity check
         if extra_features_dict is not None:
             extra_f_allowed = ["all_points", "all_destinations", "n_connected_points", "n_destinations", "n_points"]
@@ -165,8 +166,7 @@ class TFDataSet():
         ds_pickle_list = []
 
         for i in tqdm(df_c[id_col_name].unique()):
-            # create a dictionary for this path, will eventually be used for TF DS
-            ds_dict = dict()            
+       
             # extract a dataframe of one trajectory
             path_df = df_c.loc[df_c[id_col_name] == i]
             path_df = path_df.drop(columns = id_col_name)
@@ -186,8 +186,11 @@ class TFDataSet():
                 seq_in_length_l = range(seq_in_length, num_points-lbl_length+1, length_stride)   
 
             for in_length in seq_in_length_l:
-                # Windowing if needed
 
+                # create a dictionary for this path, will eventually be used for TF DS
+                ds_dict = dict()     
+
+                # Windowing if needed
                 def windower(a, window_size):
                     n = a.shape[0]
                     n_out_frames = max((n-window_size+1),0)
@@ -222,12 +225,12 @@ class TFDataSet():
                 the_type_out = ds_dict["labels"].dtype
 
                 ds_dict["input_labels"]=tf.ragged.constant(full_input_list).to_tensor()
-                lbl_len = ds_dict["input_labels"].shape[0]
+                inp_lbl_len = ds_dict["input_labels"].shape[-2]
                 the_type_in = ds_dict["input_labels"].dtype
 
                 # if error is raised here, give it a bigger max label length
                 ds_dict["labels"] = tf.concat([ds_dict["labels"], tf.zeros([lbl_len, max_label_len-lbl_len, 2], dtype=the_type_out)], axis=-2)
-                ds_dict["input_labels"] = tf.concat([ds_dict["input_labels"], tf.zeros([lbl_len, max_label_len-lbl_len, 2], dtype=the_type_in)], axis=-2)
+                ds_dict["input_labels"] = tf.concat([ds_dict["input_labels"], tf.zeros([n_frames, max_inp_label_len-inp_lbl_len, 2], dtype=the_type_in)], axis=-2)
 
 
                 # include the wanted extra features
@@ -268,9 +271,13 @@ class TFDataSet():
                         ds_dict[extra_f] = tf.tile(tf.expand_dims(ds_dict[extra_f],0), [n_frames, 1, 1])
 
                     # for path in path_np_w:
+                    # print("Input Labels: %s"%(ds_dict["input_labels"].shape))
+                    # print("Labels: %s"%(ds_dict["labels"].shape))
                     for path in ds_dict["input_labels"]:
                         # no cheating: only get the points that will be used as input
                         # path = path[:-lbl_length, :]
+                        path = remove_padding_vals2(path)
+                        # print(path)
                         if "all_points_after" in extra_f_keys:
                             extra_f = "all_points_after" 
                             # Get the feature output
@@ -296,7 +303,9 @@ class TFDataSet():
                             # Save the shape of the feature for setting up the neural network
                             extra_f_sizes[extra_f] = ds_dict[extra_f].shape
                         if "n_connected_points_after" in extra_f_keys:
+                            # print(path.shape)
                             extra_f = "n_connected_points_after"
+
                             f_result = tf.expand_dims(
                                 self.__get_n_point_prob_tensor(self, path, normer, graph, extra_features_dict[extra_f], "connected_points"),
                                 axis=0)
@@ -305,6 +314,7 @@ class TFDataSet():
                                 ds_dict[extra_f] = tf.concat([ds_dict[extra_f],f_result], axis=0)
                             else:
                                 ds_dict[extra_f] = f_result
+                            # print(ds_dict[extra_f].shape)
                             # Save the shape of the feature for setting up the neural network
                             extra_f_sizes[extra_f] = ds_dict[extra_f].shape
                         if "n_destinations_after" in extra_f_keys:

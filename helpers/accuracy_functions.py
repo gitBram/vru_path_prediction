@@ -132,7 +132,7 @@ def tf_ds_kpi(tf_ds, keyword1, dl_trainer, n, var_in_len):
     batch1 = d[keyword1]
 
     batch2 = dl_trainer.predict_repetitively_dict(d, False, n+1, var_in_len)
-    # print(batch2)
+    
     ade_val, c, nc = batch_kpi(avg_displacement_error, batch1, batch2, n)
     fde_val, _, _ = batch_kpi(final_displacement_error, batch1, batch2, n)
 
@@ -151,9 +151,12 @@ def tf_ds_kpi(tf_ds, keyword1, dl_trainer, n, var_in_len):
 
 
 def test():
-    z = np.zeros((5,2))
-    v = np.random.random((6,2))
-    tog = np.concatenate([v,z], axis=0)
+    z = np.zeros((5,3,2))
+    v = np.ones((5,2,2))
+    tog = np.concatenate([v,z], axis=1)
+    z2 = np.zeros((5,4,2))
+    v2 = np.ones((5,3,2))
+    tog2 = np.concatenate([v2,z2], axis=1)
     print(tog)
 
     a = np.array([[1., 1.], [2., 2.], [3., 3.], [0., 0.]])
@@ -173,15 +176,15 @@ def test():
     tf_ds=tf.data.Dataset.from_tensors(d)
 
     # Check if the new removal of paddings vals is faster
-    import timeit
-    c = np.zeros(shape=(230,2))
-    c = np.vstack([np.array([1., 0.]), c])
-    def fun():
-      remove_padding_vals(c)
-    def fun2():
-      remove_padding_vals2(c)
-    print(timeit.timeit(fun))
-    print(timeit.timeit(fun2))
+    # import timeit
+    # c = np.zeros(shape=(230,2))
+    # c = np.vstack([np.array([1., 0.]), c])
+    # def fun():
+    #   remove_padding_vals(c)
+    # def fun2():
+    #   remove_padding_vals2(c)
+    # print(timeit.timeit(fun))
+    # print(timeit.timeit(fun2))
 
     return None
 if __name__ == '__main__':
