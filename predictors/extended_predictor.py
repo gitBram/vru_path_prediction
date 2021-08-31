@@ -11,7 +11,8 @@ class extended_predictor:
         self._dl_trainer = dl_trainer
         self._time_per_step = time_per_step
     
-    def predict_to_destinations(self, input_dict, num_steps, num_predictions, variable_len_input):
+    def predict_to_destinations(self, input_dict, num_steps, variable_len_input, num_predictions, 
+    norm_probs = True, abs_probs = True):
         '''
         Predict the output based on an input dict 
         num_steps steps in to the future
@@ -24,9 +25,13 @@ class extended_predictor:
         self.graph.recalculate_trans_mat_dependencies() 
         #   Calculate the output probabilities
         input_lbl = self.remove_padding_vals(input_dict["input_labels"])
-        print(input_lbl)
+        # print(input_lbl)
         visited_nodes,_ = self.graph.analyse_full_signal(input_lbl, False, allow_out_of_threshold=True)
-        dest_prob_dict = self.graph.calculate_destination_probs(visited_nodes, "destinations")
+
+        if abs_probs:
+            dest_prob_dict = self.graph.calculate_destination_probs(visited_nodes, "destinations", norm_probs=norm_probs)
+        else:
+            dest_prob_dict = self.graph.calculate_destination_probs_absolute(visited_nodes, norm_probs=norm_probs)
 
         # Predict num_steps towards each destination (It's easy: dl_trainer handles scaling etc)
         # get list of all destinations + locations
@@ -56,11 +61,12 @@ class extended_predictor:
             dest_loc_one_hot = tf.concat([input_dict_c["all_destinations"][:,:,0:2], new_probs], axis=-1)
             input_dict_c["all_destinations"] = dest_loc_one_hot
 
-            predicted_rep_out = self.dl_trainer.predict_repetitively_dict(input_dict_c, scale_input_tensor=False,
-            num_out_predictions=num_steps,variable_len_input=variable_len_input)
+            predicted_rep_out = self.dl_trainer.predict_repetitively_dict_epi(input_dict_c, scale_input_tensor=False,
+            num_out_predictions=num_steps,variable_len_input=variable_len_input, num_predictions=num_predictions)
 
             # Add the result to the stack list
             stack_list.append(predicted_rep_out)
+
             # Add the destination to the destination list
             if self.dl_trainer.scaler is not None:
                 locations_unsc = self.dl_trainer.scaler.scale_tensor(dest_loc_one_hot[:,:,0:2], "denormalize", "in")

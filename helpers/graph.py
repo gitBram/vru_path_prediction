@@ -126,11 +126,6 @@ class Graph():
 
         return np.matrix(wp_list), np.matrix(dest_list)
 
-    def get_extra_wps(self):
-        ''' After calculating the graph, add waypoints on the major connections evenly spaces '''
-
-        return updated_wp_dict
-
     def analyse_multiple_full_signals(self, signal_list, add_to_trams_mat):
         return_lists = []
 
@@ -279,9 +274,44 @@ class Graph():
         # Norm probabilities to sum to 1 if requested
         if norm_probs:
             total = sum(prob_dict.values())
-            prob_dict = {k: v / total for k, v in prob_dict.values()}
+            prob_dict = {k: v / total for k, v in prob_dict.items()}
 
         return prob_dict
+
+    def calculate_destination_probs_absolute(self, path, norm_probs=False):
+        ''' Multiply the probs with the occurance percentage to get absolute  '''
+
+        rel_prob_dict = self.calculate_destination_probs(path, "destinations",False)
+
+        occurances = self.destination_occurance(normalize=False)
+
+        # check that there's same number of destinations
+        assert len(rel_prob_dict.keys())==len(occurances.keys())
+
+        # adjust the rel_prob_dict
+        for key in rel_prob_dict.keys():
+            rel_prob_dict[key] = rel_prob_dict[key] * occurances[key]
+        
+        # normalize if needed
+        if norm_probs:
+            total = sum(rel_prob_dict.values())
+            rel_prob_dict = {k: v / total for k, v in rel_prob_dict.items()}
+
+        return rel_prob_dict
+
+
+    def destination_occurance(self, normalize=False):
+        # empty dict
+        occurance_dict = dict()
+        # get number of transitions to each of the destinations
+        for destination_name, destination_id in self.destinations_indices_dict.items():
+            occurance_dict[destination_name] = np.sum(self.trans_mat[:,destination_id])
+
+        if normalize:
+            total = sum(occurance_dict.values())
+            occurance_dict = {k: v / total for k, v in occurance_dict.items()}
+        return occurance_dict
+
     
     def __calculate_destination_probs_back(self, path, dests_or_points):
         '''

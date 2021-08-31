@@ -224,6 +224,108 @@ class DLTrainer:
 
         return assembled_output
 
+    def predict_repetitively_dict_epi(self, input_dict, scale_input_tensor, 
+    num_out_predictions, variable_len_input, num_predictions=1):
+        
+        '''
+        Prediction based on input dict using epistemic 
+        scale_input_tensor sets whether the input tensor still needs to be scaled
+        num_out_predictions is number of outputs (approx)
+        variable_len_input sets whether network only receives fixed length input
+        '''
+        stacked_n_preds = None
+
+        for n in range(num_predictions):
+            input_dict_c = dict(input_dict)
+            # Make sure input tensor is 3d 
+            if len(input_dict_c["in_xy"].shape) <= 2:
+                input_dict_c["in_xy"] = tf.expand_dims(input_dict_c["in_xy"], axis=0)
+
+            # Calculate number of repetitions based on number of wanted points and number of points predicted each prediction
+            # TODO: still got to fix number of steps predicted if possible to divide
+            num_repetitions = ceil(num_out_predictions/self.num_out_steps)
+
+            # Get type same with output of model (float instead of double) to be able to concat
+            input_dict_c["in_xy"] = tf.cast(input_dict_c["in_xy"], dtype=tf.float32)
+            
+
+            assembled_output = None
+
+            for i in range(num_repetitions):
+                # get one prediction
+                new_output, new_output_s = self.predict_dict(input_dict_c, scale_input_tensor)
+
+                try:
+                    assembled_output = tf.concat([assembled_output, new_output_s], axis=1)
+                except:
+                    assembled_output = new_output_s
+
+                # add the output to the new input, drop first of input in case it input should be kept constant length
+                input_dict_c["in_xy"] = tf.concat([input_dict_c["in_xy"], new_output], axis=1)
+
+                # drop the n first rows if input has to stay same length
+                if not variable_len_input:
+                    input_dict_c["in_xy"] = input_dict_c["in_xy"][:, -self.num_in_steps:, :]
+            try:
+                stacked_n_preds = tf.concat([stacked_n_preds, assembled_output], axis=0)
+            except:
+                stacked_n_preds = assembled_output
+        return stacked_n_preds
+
+    def predict_repetitively_dict_epi_adapted(self, input_dict, scale_input_tensor, 
+    num_out_predictions, variable_len_input, num_predictions=1):
+        '''
+        Same as predict_repetitively_dict_epi but put in new function for compatibility issues
+        '''
+        
+        '''
+        Prediction based on input dict using epistemic 
+        scale_input_tensor sets whether the input tensor still needs to be scaled
+        num_out_predictions is number of outputs (approx)
+        variable_len_input sets whether network only receives fixed length input
+        '''
+        stacked_n_preds = None
+
+        for n in range(num_predictions):
+            input_dict_c = dict(input_dict)
+            # Make sure input tensor is 3d 
+            if len(input_dict_c["in_xy"].shape) <= 2:
+                input_dict_c["in_xy"] = tf.expand_dims(input_dict_c["in_xy"], axis=0)
+
+            # Calculate number of repetitions based on number of wanted points and number of points predicted each prediction
+            # TODO: still got to fix number of steps predicted if possible to divide
+            num_repetitions = ceil(num_out_predictions/self.num_out_steps)
+
+            # Get type same with output of model (float instead of double) to be able to concat
+            input_dict_c["in_xy"] = tf.cast(input_dict_c["in_xy"], dtype=tf.float32)
+            
+
+            assembled_output = None
+
+            for i in range(num_repetitions):
+                # get one prediction
+                new_output, new_output_s = self.predict_dict(input_dict_c, scale_input_tensor)
+
+                try:
+                    assembled_output = tf.concat([assembled_output, new_output_s], axis=1)
+                except:
+                    assembled_output = new_output_s
+
+                # add the output to the new input, drop first of input in case it input should be kept constant length
+                input_dict_c["in_xy"] = tf.concat([input_dict_c["in_xy"], new_output], axis=1)
+
+                # drop the n first rows if input has to stay same length
+                if not variable_len_input:
+                    input_dict_c["in_xy"] = input_dict_c["in_xy"][:, -self.num_in_steps:, :]
+            
+            # expand dims to get separate batch and epistemic axis
+            assembled_output = tf.expand_dims(assembled_output, axis = 1)
+            try:
+                stacked_n_preds = tf.concat([stacked_n_preds, assembled_output], axis=1)
+            except:
+                stacked_n_preds = assembled_output
+        return stacked_n_preds
+
     def predict_repetitively(self, input_tensor, scale_input_tensor, num_repetitions, fixed_len_input):
         # Make sure input tensor is 3d 
         if len(input_tensor.shape) <= 2:
@@ -294,7 +396,8 @@ class DLTrainer:
         return None
 
     def LSTM_one_shot_predictor_named_i(self, ds_creator_inst, lstm_layer_size, 
-    dense_layer_size, n_LSTM_layers, n_dense_layers, extra_features, var_time_len, size_dict=None):
+    dense_layer_size, n_LSTM_layers, n_dense_layers, extra_features, var_time_len, 
+    size_dict=None, epistemic = False, dropout_rate = .05):
         # sanity check
         if len(extra_features) > 0:
             if size_dict is None:
@@ -341,9 +444,13 @@ class DLTrainer:
         m = Concatenate()(concat_list)
 
         m = Dense(dense_layer_size)(m)
+        if epistemic:
+            m = self.__PermaDropout(dropout_rate)(m)
 
         for i in range(max(n_dense_layers - 2, 0)):
             m = Dense(dense_layer_size)(m)
+            if epistemic:
+                m = self.__PermaDropout(dropout_rate)(m)
         
         m = Dense(ds_creator_inst.num_out_steps*ds_creator_inst.num_out_features,
                                     kernel_initializer=tf.initializers.random_uniform)(m)

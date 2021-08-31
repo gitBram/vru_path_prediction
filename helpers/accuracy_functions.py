@@ -97,8 +97,11 @@ def remove_padding_vals2(array, padding_val = 0.):
 
 def remove_padding_vals(array, padding_array = np.array([0., 0.])):
   ''' remove the padding zeros from an array '''
+  array_c = np.array(array)
+
   try:
-    min_index = np.min((array==padding_array).all(axis=1).nonzero()[0])
+    min_index = np.min((array_c==padding_array).all(axis=1).nonzero()[0])
+
     return array[:min_index]
   except:
     return array
@@ -187,5 +190,58 @@ def test():
     # print(timeit.timeit(fun2))
 
     return None
+
+def destination_distance_l(predicted_batch, destination_loc, only_endpoint=False):
+  '''
+  Function for calculating kpi to test distance of predictions to the assigned destination
+  '''
+  # batch: (batch, time, x/y)
+
+  # create list to keep track of distances
+  distance_list = []
+
+  # check the number dimensions
+  destination_loc_np = np.array(destination_loc)
+  if destination_loc_np.ndim < 2:
+    destination_loc_np = np.expand_dims(destination_loc_np, axis=0)
+
+  for batch_traj in predicted_batch:
+    # batch_traj: (time, x/y)
+    if only_endpoint == True:
+      d = distance.cdist(batch_traj[-1:, :], destination_loc_np, "euclidean")
+    else:
+      d = np.min(distance.cdist(batch_traj, destination_loc_np, "euclidean"))
+    
+    distance_list.append(d)
+
+  d_list = np.array(distance_list)
+
+  return d_list
+
+def get_batch_avg_dest_dist_diff(pred_batch_with_dest, pred_batch_wo_dest, 
+dest_loc, only_endpoint=False):
+  # check the number dimensions
+  destination_loc_np = np.array(dest_loc)
+  if destination_loc_np.ndim < 2:
+    destination_loc_np = np.expand_dims(destination_loc_np)
+
+  # Get distances to destination for batch with destination included
+  d_w_dest = destination_distance_l(pred_batch_with_dest, destination_loc_np, only_endpoint)
+
+  # Get distances to destination for batch wo destination included
+  d_wo_dest = destination_distance_l(pred_batch_wo_dest, destination_loc_np, only_endpoint)
+
+  # Get difference between both distances from the destination
+  d_diff = d_w_dest - d_wo_dest
+
+  return np.average(d_diff)
+
+
+def test2():
+  a = np.array([[1., 1.], [2., 2.], [3., 3.], [0., 0.]])
+  b = np.array([[1., 0.]])
+  # print(closest_node(b,a))
+  print(np.diagonal(distance.cdist(a, a+1, "euclidean")))
+
 if __name__ == '__main__':
-  test()
+  test2()

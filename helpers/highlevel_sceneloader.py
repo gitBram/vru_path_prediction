@@ -11,12 +11,15 @@ GOAL:
   - Save or return ax
 '''
 
+from logging import disable
 import xml.etree.ElementTree as ET
 import os, sys, yaml
+from tensorflow.python.keras.backend import dtype
 import matplotlib.pyplot as plt
 import numpy as np
 from math import floor, ceil
 import tensorflow as tf
+from .accuracy_functions import remove_padding_vals
 
 class HighLevelSceneLoader():
   def __init__(self, img_bound_file_loc, dest_file_loc):
@@ -182,7 +185,7 @@ class HighLevelSceneLoader():
 
   def plot_on_image(self, lst_realxy_mats, ms = 3, invert_y = False, save_path = None, 
   ax=None, col_num_dicts=dict(zip(["x", "y"], [0, 1])), labels=None, colors=['Green'], title=None, 
-  axes_labels=None, hide_axes=False):
+  axes_labels=None, hide_axes=False, image_provided=False):
     ''' Plot a list of xy matrices on top of an image '''
     # Check input types
     if type(col_num_dicts)!= list:
@@ -198,6 +201,9 @@ class HighLevelSceneLoader():
     if len(lst_realxy_mats) != len(col_num_dicts):
       raise ValueError("Number of xy matrices and dictionaries should be equal.")
 
+    # remember whether ax was provided
+    ax_provided = False if ax is None else True
+
     # Set up axis 
     if ax is None:
         ax = plt.gca()
@@ -207,7 +213,9 @@ class HighLevelSceneLoader():
     ax.set_aspect('equal', adjustable='box')
     extent_bounds = [self.image_limits['x_min'], self.image_limits['x_max'],
     self.image_limits['y_min'], self.image_limits['y_max']]
-    ax.imshow(self.image, extent=list(extent_bounds))
+
+    if image_provided == False:
+      ax.imshow(self.image, extent=list(extent_bounds))
 
     # in-built possibility to reverse y-axis
     if invert_y:
@@ -232,7 +240,8 @@ class HighLevelSceneLoader():
 
         # Reshape 3d (batched) data for easy plotting
         if len(my_shape) == 3:
-          xy_np = xy_np.reshape(-1, my_shape[-1])         
+          xy_np = xy_np.reshape(-1, my_shape[-1])   
+          xy_np=remove_padding_vals(xy_np)   
 
         # get the correct marker size
         m_size = None
@@ -315,9 +324,140 @@ class HighLevelSceneLoader():
     # save if needed
     if save_path is not None:
       plt.gcf()
-      plt.savefig(save_path)
+      plt.savefig(save_path, dpi=500, bbox_inches='tight')
 
     return None
+
+  def get_aggregated_output_probs(self, aggregated_outputs, probability_dict, 
+  grid_resolution, invert_y=False, alpha_val = .7):
+    '''
+    Aggregate the predictions to each destination in a grid
+    grid_limits are in form (x_min, x_max, y_min, y_max)
+    '''
+    # unpack grid_limits
+    x_min = self.image_limits["x_min"]
+    x_max = self.image_limits["x_max"]
+    y_min = self.image_limits["y_min"]
+    y_max = self.image_limits["y_max"]
+
+    # Create grid matrix
+    width = ceil((x_max-x_min)/grid_resolution) 
+    height = ceil((y_max-y_min)/grid_resolution) 
+
+    grid_matrix = np.zeros((height, width), dtype=np.float32)
+    alphas = np.zeros((height, width), dtype=np.float32)
+    # Loop over all points - check grid position - retrieve prob and add to grid matrix  
+    # points are in shape (destination, num_predictions, num_steps per prediction, x/y)
+    s = aggregated_outputs.shape
+
+    for destination in range(s[0]):
+      dest_prob = list(probability_dict.values())[destination]
+      for num_pred in range(s[1]):
+        for num_step in range(s[2]):
+
+            x_coor = aggregated_outputs[destination, num_pred, num_step, 0]
+            y_coor = aggregated_outputs[destination, num_pred, num_step, 1]
+
+            try:
+              x, y = self.find_grid_indices(x_coor, y_coor, x_min, y_min, grid_resolution)
+
+              if not invert_y:
+                grid_matrix[y, x] += dest_prob
+                alphas[y, x] = alpha_val
+              else:
+                grid_matrix[height-y-1, x] += dest_prob
+                alphas[height-y-1, x] = alpha_val
+
+            except:
+              print("Prediction out of the grid. (%s,%s) for a grid size of (%s,%s)"%(x, y, width, height))
+              self.plot_on_image([tf.reshape()])
+            
+      # Normalize all grid entries  
+      grid_matrix = grid_matrix / np.sum(grid_matrix)
+
+    return grid_matrix, alphas, (x_min, x_max, y_min, y_max)
+
+  def plot_aggregated_probs_progress(self, aggregated_outputs, probability_dict, 
+  grid_resolution, invert_y=False, disable_axes=False, alpha_val = .7,
+  min_steps = 0, max_steps = 5, lst_real_xy_mats = None):
+    for i in range(min_steps, max_steps + 1):
+      save_path = "progress/"+str(i)+".png"
+      self.plot_aggregated_output_probs(aggregated_outputs[:,:,i:i+1,:], probability_dict, 
+      grid_resolution, invert_y=invert_y, ax=None, save_path=save_path, disable_axes=disable_axes, alpha_val = .7,
+      lst_real_xy_mats=lst_real_xy_mats)
+      
+    return None
+
+  def plot_aggregated_output_probs(self, aggregated_outputs, probability_dict, 
+  grid_resolution, invert_y=False, ax=None, save_path=None, disable_axes=False, 
+  alpha_val = .7, lst_real_xy_mats = None):
+
+    # unpack grid_limits
+    x_min = self.image_limits["x_min"]
+    x_max = self.image_limits["x_max"]
+    y_min = self.image_limits["y_min"]
+    y_max = self.image_limits["y_max"]
+
+    grid, alpha, _ = self.get_aggregated_output_probs(aggregated_outputs, probability_dict, 
+    grid_resolution, invert_y, alpha_val=alpha_val)
+
+    # pyplot things
+    if ax is None:
+      ax = plt.gca()
+    else:
+      plt.sca(ax)
+
+    # plot the matrix
+    # ax.matshow(grid)
+    ax.imshow(self.image, extent=[x_min, x_max, y_min, y_max])
+    ax.imshow(grid, cmap=plt.cm.Reds, interpolation='none', 
+    extent=[x_min, x_max, y_min, y_max], alpha=alpha)
+
+    if lst_real_xy_mats is not None:
+      ax = self.plot_on_image(lst_real_xy_mats, ax=ax, image_provided=True)
+
+    if disable_axes:
+      plt.axis("off")
+
+    if save_path is not None:
+      plt.gcf()
+      plt.savefig("data/images/aggregated_probs/" + save_path, bbox_inches='tight')
+
+    return ax
+
+  def find_grid_indices(self, x_coor, y_coor, x_min, y_min, grid_resolution):
+    x = floor((x_coor - x_min) / grid_resolution)
+    y = floor((y_coor - y_min) / grid_resolution)
+    return x, y
+
+  def calculate_path_probability(self, ):
+
+    return probs
+
+
+  def get_cell_limits(self, xy, grid_limits, grid_resolution):
+      ''' get the x/y limits of a cell with coordinates (x,y), in order to filter the df on it '''
+      # xy is tuple with cell x/y index [no unit], grid_limits is tuple (xmin, xmax, ymin, ymax) [m], grid_resolution is width of cell [m]
+      # based on grid definition
+      # grid zero is bottom left, zero based indexing
+
+      # represent input easier
+      x,y = xy
+      g_x_min, g_x_max, g_y_min, g_y_max = grid_limits
+      # check input
+      x_diff = g_x_max - g_x_min
+      y_diff = g_y_max - g_y_min
+
+      assert x * grid_resolution < x_diff
+      assert y * grid_resolution < y_diff
+
+      # do calculations
+      x_min = g_x_min + grid_resolution * x
+      x_max = x_min + grid_resolution
+      y_min = g_y_min + grid_resolution * y
+      y_max = y_min + grid_resolution
+
+      return x_min, x_max, y_min, y_max
 
   def df_to_lst_realxy_mats(self):
     ''' Convert a dataframe to a list of xy matrices based on a value in split_col '''
