@@ -62,21 +62,22 @@ class HighLevelSceneLoader():
 
     # transfer the xml file to the dict in the class
     for dataset in root:
+      print(dataset)
       ds_name = dataset.attrib['name']
-      if ds_name == dataset_name:
-        for key in dataset:
-          key_name = key.attrib['name']
-          for img_bound in key:          
-            names = []
-            vals = []
+      # if ds_name == dataset_name:
+      for key in dataset:
+        key_name = key.attrib['name']
+        for img_bound in key:          
+          names = []
+          vals = []
 
-            for val in img_bound:
-              # print(val.tag)
-              # print(val.text)
-              names.append(val.tag)
-              vals.append(float(val.text))
+          for val in img_bound:
+            # print(val.tag)
+            # print(val.text)
+            names.append(val.tag)
+            vals.append(float(val.text))
 
-            img_bound_dict[(ds_name, key_name)] = dict(zip(names, vals))    
+          img_bound_dict[(ds_name, key_name)] = dict(zip(names, vals))    
     return img_bound_dict
 
   
@@ -162,7 +163,7 @@ class HighLevelSceneLoader():
       # set the easily accessable class vals
       self._traj_dataframe = df_ind_trajectories
       self._image = image_file
-      # self.image_limits = self.img_bound_dict[('sdd', str(scene_name)+str(scene_video_id))]
+      self.image_limits = self.img_bound_dict[('sdd', str(scene_name)+str(scene_video_id))]
       self.dataset_name = 'sdd'
       self.scene_name = str(scene_name) + str(scene_video_id)
   
@@ -369,8 +370,8 @@ class HighLevelSceneLoader():
                 alphas[height-y-1, x] = alpha_val
 
             except:
-              print("Prediction out of the grid. (%s,%s) for a grid size of (%s,%s)"%(x, y, width, height))
-              self.plot_on_image([tf.reshape()])
+              print("Prediction with coordinates (%s, %s) out of the grid. (%s,%s) for a grid size of (%s,%s)"%(x_coor, y_coor, x, y, width, height))
+              # self.plot_on_image([tf.reshape()])
             
       # Normalize all grid entries  
       grid_matrix = grid_matrix / np.sum(grid_matrix)
@@ -401,6 +402,8 @@ class HighLevelSceneLoader():
     grid, alpha, _ = self.get_aggregated_output_probs(aggregated_outputs, probability_dict, 
     grid_resolution, invert_y, alpha_val=alpha_val)
 
+
+    print("Grid sum is %s" % (np.sum(grid)))
     # pyplot things
     if ax is None:
       ax = plt.gca()
@@ -413,8 +416,10 @@ class HighLevelSceneLoader():
     ax.imshow(grid, cmap=plt.cm.Reds, interpolation='none', 
     extent=[x_min, x_max, y_min, y_max], alpha=alpha)
 
+
+
     if lst_real_xy_mats is not None:
-      ax = self.plot_on_image(lst_real_xy_mats, ax=ax, image_provided=True)
+      ax = self.plot_on_image(lst_real_xy_mats, ax=ax, image_provided=True, ms=8, colors=["red"])
 
     if disable_axes:
       plt.axis("off")
@@ -429,11 +434,6 @@ class HighLevelSceneLoader():
     x = floor((x_coor - x_min) / grid_resolution)
     y = floor((y_coor - y_min) / grid_resolution)
     return x, y
-
-  def calculate_path_probability(self, ):
-
-    return probs
-
 
   def get_cell_limits(self, xy, grid_limits, grid_resolution):
       ''' get the x/y limits of a cell with coordinates (x,y), in order to filter the df on it '''
@@ -585,6 +585,9 @@ def __test():
   a = HighLevelSceneLoader(p_img_bounds,p_dest_locs)
   p_to_data = os.path.join(curr_p, 'data/path_data')
   a.load_ind(p_to_data,11)
+
+  scene_data2 = HighLevelSceneLoader(p_img_bounds, p_dest_locs)
+  scene_data2.load_sdd(opentraj_root, "little", "video0")
 
 
 if __name__ == '__main__':

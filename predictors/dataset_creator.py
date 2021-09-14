@@ -488,7 +488,7 @@ class TFDataSet():
         else:
             # Option 1: Just find probs from closest point (even though not in predefined range)
             node,_ = graph.find_closest_point(path[-1])
-            out = graph.calculate_destination_probs(node, dests_or_points=points_or_dests, must_connect=must_connect)
+            out = graph.calculate_destination_probs(node, dests_or_points=points_or_dests)
             
             location_list = []
             prob_list = []

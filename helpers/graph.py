@@ -545,7 +545,8 @@ class Graph():
         inv_points_ids = {y:x for x,y in self.points_indices_dict.items()}
         higher_pos = [[l[0], l[1]+.1] for l in node_locations]
         nx.draw_networkx_labels(graph,higher_pos,inv_points_ids,font_size=12,font_color='black')
-        plt.savefig(save_loc)
+
+        plt.savefig(save_loc, bbox_inches='tight')
 
     def __np_dot_square(self, matrix, power):
         ''' dot product of matrix with itself power amount of times '''
