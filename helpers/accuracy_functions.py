@@ -62,11 +62,6 @@ def avg_displacement_error(array1, array2, n, in_length_perc=1.):
 
     ade = np.average(np.apply_along_axis(calc_distances, 1, comb))
 
-    # for x1, y1, x2, y2 in zip(array1[:,0], array1[:,1], array2[:,0], array2[:,1]):
-    #   error_sum += sqrt((x1-x2)**2+(y1-y2)**2)
-    #   count+=1
-
-    #   ade = error_sum/count  
   else:
     ade = None
   

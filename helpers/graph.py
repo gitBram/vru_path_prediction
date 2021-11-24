@@ -10,7 +10,7 @@ from tensorflow.python.types.core import Value
 # TODO: Add observers in order to only do the necessary recalculations https://stackoverflow.com/questions/6190468/how-to-trigger-function-on-value-change
 
 class Graph():
-    ''' Graph class to fill transition matrix and calculate probahilities '''
+    ''' Graph class to fill transition matrix and calculate probabilities '''
     def __init__(self, wayp_dict, dest_dict, dist_threshold, std_graph_prune_threshold):
         # copy vals
         self.wayp_dict = wayp_dict

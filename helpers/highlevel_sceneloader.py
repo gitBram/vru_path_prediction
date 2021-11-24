@@ -17,9 +17,10 @@ import os, sys, yaml
 from tensorflow.python.keras.backend import dtype
 import matplotlib.pyplot as plt
 import numpy as np
-from math import floor, ceil
+from math import floor, ceil, sqrt
 import tensorflow as tf
 from .accuracy_functions import remove_padding_vals
+import pandas as pd
 
 class HighLevelSceneLoader():
   def __init__(self, img_bound_file_loc, dest_file_loc):
@@ -36,6 +37,50 @@ class HighLevelSceneLoader():
     self._df_split_col = None
     self._df_x_col = None
     self._df_y_col = None
+
+  def break_up_paths(self, cut_length):
+    agent_ids = self._traj_dataframe["agent_id"].unique()
+    split_df = pd.DataFrame(columns=self._traj_dataframe.columns)
+
+    current_agent_number = 0
+
+
+    for agent_id in agent_ids:
+        current_df = self._traj_dataframe[self._traj_dataframe["agent_id"]==agent_id]
+        df_len = len(current_df)
+
+        # only split if path is long enough
+        if df_len < 2 * cut_length:
+            # path is not long enough
+
+            # change the agent_id
+            current_df["agent_id"].values[:]=current_agent_number
+            current_agent_number += 1
+            # append the data 
+            split_df=split_df.append(current_df)
+        else:
+            # path is long enough 
+
+            # how many paths do we carve out?
+            num_paths = int(df_len/cut_length)
+
+            for i in range(num_paths):
+                start_id = i*cut_length
+                if i == num_paths - 1:
+                    # last bit
+                    end_id = df_len
+                else:
+                    # not last bit
+                    end_id = (i+1) * cut_length
+                extracted_df = current_df.iloc[start_id:end_id]
+
+                # change the agent_id
+                extracted_df["agent_id"].values[:]=current_agent_number
+                current_agent_number += 1
+                # append the data 
+                split_df=split_df.append(extracted_df)
+    self._traj_dataframe = split_df
+
     
   def __populate_dest_dict(self):
     return None
@@ -82,7 +127,7 @@ class HighLevelSceneLoader():
 
   
   def load_ind(self, root_datasets, file_id, end_file_id_range=None,
-  x_col = 'pos_x', y_col = 'pos_y', split_col = 'agent_id'):
+  x_col = 'pos_x', y_col = 'pos_y', split_col = 'agent_id', break_paths = False):
 
       # set the col names correctly
       self.df_split_col = split_col
@@ -133,7 +178,7 @@ class HighLevelSceneLoader():
       self.scene_name = str(file_id)
 
   def load_sdd(self, opentraj_root, scene_name, scene_video_id, 
-  x_col = 'pos_x', y_col = 'pos_y', split_col = 'agent_id'):
+  x_col = 'pos_x', y_col = 'pos_y', split_col = 'agent_id', break_paths = False):
 
       # set the col names correctly
       self.df_split_col = split_col
@@ -251,7 +296,7 @@ class HighLevelSceneLoader():
         else:
           m_size = ms
         # print(xy)
-        ax.scatter(xy_np[:, col_num_dict['x']], xy_np[:, col_num_dict['y']], s=m_size, c=color)
+        ax.scatter(xy_np[:, col_num_dict['x']], xy_np[:, col_num_dict['y']], s=m_size)#, c=color)
 
     if not labels is None:
       ax.legend(labels)
@@ -482,7 +527,7 @@ class HighLevelSceneLoader():
   def plot_all_trajs_on_img(self, save_path, col_num_dicts=dict(zip(["x", "y"], [0, 1]))):
     ''' Plot all the trajectories on the background image '''
     l = self.df_to_lst_realxy_mats()
-    ax = self.plot_on_image(l, save_path=save_path, invert_y=False, col_num_dicts=col_num_dicts)
+    ax = self.plot_on_image(l, save_path=save_path, invert_y=False, col_num_dicts=col_num_dicts, hide_axes=True)
     return ax
 
   def plot_dests_on_img(self, save_path, col_num_dicts=dict(zip(["x", "y"], [0, 1]))):
@@ -549,6 +594,37 @@ class HighLevelSceneLoader():
       locs_mat[i, 1] = d['y']
     
     return locs_mat
+
+  @property
+  def num_trajectories(self):
+    return self.traj_dataframe[self.df_split_col].nunique()
+
+  @property
+  def avg_traj_step_length(self):
+    return len(self.traj_dataframe)/self.num_trajectories
+
+  @property
+  def step_time(self):
+    return self.traj_dataframe['timestamp'][1] - self.traj_dataframe['timestamp'][0]
+
+  @property
+  def avg_traj_length(self):
+    return self.avg_traj_step_length*self.step_time
+
+  @property 
+  def num_paths_within_x_meters_of_dests(self):
+    counter_list = [0] * len(self.destination_matrix)
+
+    dest_df = self.traj_dataframe.copy()
+    dest_df["agent_id" + '_copy'] = dest_df["agent_id"].shift(-1)
+    dest_df = dest_df.loc[dest_df["agent_id"]!=dest_df["agent_id" + '_copy']]
+
+    for x,y in dest_df[[self._df_x_col, self._df_y_col]].to_numpy():
+      for d, i in zip(self.destination_matrix, range(len(self.destination_matrix))):
+        if sqrt((x-d[0])**2+(y-d[1])**2) < 4:
+          counter_list[i] += 1
+    return counter_list 
+
 
 """
 def plot_on_image(image, real_boundaries, lst_realxy_mats, ms = 3, invert_y = False, ax = None):
